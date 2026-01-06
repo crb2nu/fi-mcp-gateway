@@ -1,0 +1,43 @@
+# Go CI - Uses shared templates from platform/gitops
+include:
+  - project: 'platform/gitops'
+    file: '/ci/templates/go.yml'
+
+stages: [lint, test, build, deploy]
+
+variables:
+  GO_VERSION: "1.24"
+
+lint:gofmt:
+  extends: .go-base
+  stage: lint
+  script:
+    - if [ -n "$(gofmt -l .)" ]; then echo "Go code is not formatted"; gofmt -d .; exit 1; fi
+
+lint:vet:
+  extends: .go-base
+  stage: lint
+  script:
+    - go vet ./...
+
+test:
+  extends: .go-test
+
+build:
+  extends: .go-build
+  script:
+    - mkdir -p bin
+    - go build -o bin/fi-mcp-gateway ./cmd/fi-mcp-gateway
+  artifacts:
+    paths:
+      - bin/fi-mcp-gateway
+    expire_in: 1 week
+
+deploy:
+  stage: deploy
+  image: alpine:3.21
+  script:
+    - echo "No deploy configured for fi-mcp-gateway (binary-only repo)."
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: manual
