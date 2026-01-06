@@ -3,18 +3,24 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gitlab.flexinfer.ai/libs/fi-mcp-kit/pkg/registry"
+	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/apikeys"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/auth"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/mcpws"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/policy"
+	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/quota"
 )
 
 type Server struct {
-	reg *registry.Registry
-	ws  *mcpws.Gateway
+	reg           *registry.Registry
+	ws            *mcpws.Gateway
+	authenticator auth.Authenticator
+	apikeys       apikeys.Manager
+	quotas        quota.Manager
 }
 
 type Config struct {
@@ -22,16 +28,21 @@ type Config struct {
 	Authenticator  auth.Authenticator
 	Policy         policy.Policy
 	RateLimiter    mcpws.RateLimiter
+	APIKeys        apikeys.Manager
+	Quotas         quota.Manager
 }
 
 func New(cfg Config) *Server {
 	return &Server{
-		reg: cfg.Registry,
+		reg:           cfg.Registry,
+		authenticator: cfg.Authenticator,
+		apikeys:       cfg.APIKeys,
+		quotas:        cfg.Quotas,
 		ws: mcpws.New(mcpws.Config{
-			Registry:       cfg.Registry,
-			Authenticator:  cfg.Authenticator,
-			Policy:         cfg.Policy,
-			RateLimiter:    cfg.RateLimiter,
+			Registry:      cfg.Registry,
+			Authenticator: cfg.Authenticator,
+			Policy:        cfg.Policy,
+			RateLimiter:   cfg.RateLimiter,
 		}),
 	}
 }
@@ -84,6 +95,20 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]any{"servers": out})
 	})
 
+	// API Key management endpoints
+	if s.apikeys != nil {
+		mux.HandleFunc("POST /api/v1/keys", s.handleCreateKey)
+		mux.HandleFunc("GET /api/v1/keys", s.handleListKeys)
+		mux.HandleFunc("GET /api/v1/keys/{id}", s.handleGetKey)
+		mux.HandleFunc("DELETE /api/v1/keys/{id}", s.handleRevokeKey)
+		mux.HandleFunc("POST /api/v1/keys/{id}/rotate", s.handleRotateKey)
+	}
+
+	// Quota status endpoint
+	if s.quotas != nil {
+		mux.HandleFunc("GET /api/v1/quotas", s.handleGetQuotas)
+	}
+
 	// WebSocket MCP gateway (server-bound, v0).
 	mux.HandleFunc("/ws", s.ws.HandleWS)
 
@@ -97,4 +122,316 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]any{"error": message})
+}
+
+// requireAuth authenticates the request and returns the principal.
+// Returns nil if authentication fails (error already written to response).
+func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) *auth.Principal {
+	if s.authenticator == nil {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return nil
+	}
+
+	principal, err := s.authenticator.Authenticate(r)
+	if err != nil || principal == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return nil
+	}
+
+	return principal
+}
+
+// API Key handlers
+
+type createKeyRequest struct {
+	Name      string   `json:"name"`
+	Scopes    []string `json:"scopes,omitempty"`
+	ExpiresIn string   `json:"expires_in,omitempty"` // e.g., "720h" for 30 days
+}
+
+type keyResponse struct {
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	KeyPrefix string     `json:"key_prefix"`
+	Scopes    []string   `json:"scopes,omitempty"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	LastUsed  *time.Time `json:"last_used_at,omitempty"`
+	Revoked   bool       `json:"revoked"`
+}
+
+func apiKeyToResponse(k apikeys.APIKey) keyResponse {
+	return keyResponse{
+		ID:        k.ID,
+		Name:      k.Name,
+		KeyPrefix: k.KeyPrefix,
+		Scopes:    k.Scopes,
+		ExpiresAt: k.ExpiresAt,
+		CreatedAt: k.CreatedAt,
+		LastUsed:  k.LastUsedAt,
+		Revoked:   k.RevokedAt != nil,
+	}
+}
+
+func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
+	principal := s.requireAuth(w, r)
+	if principal == nil {
+		return
+	}
+
+	var req createKeyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if strings.TrimSpace(req.Name) == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+
+	var expiresIn time.Duration
+	if req.ExpiresIn != "" {
+		var err error
+		expiresIn, err = time.ParseDuration(req.ExpiresIn)
+		if err != nil || expiresIn < 0 {
+			writeError(w, http.StatusBadRequest, "invalid expires_in duration")
+			return
+		}
+	}
+
+	result, err := s.apikeys.Create(r.Context(), apikeys.CreateKeyRequest{
+		TenantID:  principal.TenantID(),
+		UserID:    principal.Subject,
+		Name:      strings.TrimSpace(req.Name),
+		Scopes:    req.Scopes,
+		ExpiresIn: expiresIn,
+	})
+	if err != nil {
+		switch err {
+		case apikeys.ErrTooManyKeys:
+			writeError(w, http.StatusConflict, "maximum keys per user exceeded")
+		case apikeys.ErrInvalidRequest:
+			writeError(w, http.StatusBadRequest, "invalid request")
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to create key")
+		}
+		return
+	}
+
+	// Return the plaintext key only once
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"key":        result.PlaintextKey,
+		"key_id":     result.Key.ID,
+		"key_prefix": result.Key.KeyPrefix,
+		"name":       result.Key.Name,
+		"expires_at": result.Key.ExpiresAt,
+		"created_at": result.Key.CreatedAt,
+		"message":    "Save this key securely. It will not be shown again.",
+	})
+}
+
+func (s *Server) handleListKeys(w http.ResponseWriter, r *http.Request) {
+	principal := s.requireAuth(w, r)
+	if principal == nil {
+		return
+	}
+
+	keys, err := s.apikeys.List(r.Context(), principal.TenantID(), principal.Subject)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list keys")
+		return
+	}
+
+	response := make([]keyResponse, 0, len(keys))
+	for _, k := range keys {
+		response = append(response, apiKeyToResponse(k))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"keys": response})
+}
+
+func (s *Server) handleGetKey(w http.ResponseWriter, r *http.Request) {
+	principal := s.requireAuth(w, r)
+	if principal == nil {
+		return
+	}
+
+	keyID := r.PathValue("id")
+	if keyID == "" {
+		writeError(w, http.StatusBadRequest, "key id required")
+		return
+	}
+
+	key, err := s.apikeys.Get(r.Context(), keyID)
+	if err != nil {
+		if err == apikeys.ErrKeyNotFound {
+			writeError(w, http.StatusNotFound, "key not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to get key")
+		}
+		return
+	}
+
+	// Verify ownership
+	if key.TenantID != principal.TenantID() || key.UserID != principal.Subject {
+		writeError(w, http.StatusNotFound, "key not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, apiKeyToResponse(key))
+}
+
+func (s *Server) handleRevokeKey(w http.ResponseWriter, r *http.Request) {
+	principal := s.requireAuth(w, r)
+	if principal == nil {
+		return
+	}
+
+	keyID := r.PathValue("id")
+	if keyID == "" {
+		writeError(w, http.StatusBadRequest, "key id required")
+		return
+	}
+
+	// Verify ownership first
+	key, err := s.apikeys.Get(r.Context(), keyID)
+	if err != nil {
+		if err == apikeys.ErrKeyNotFound {
+			writeError(w, http.StatusNotFound, "key not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to get key")
+		}
+		return
+	}
+
+	if key.TenantID != principal.TenantID() || key.UserID != principal.Subject {
+		writeError(w, http.StatusNotFound, "key not found")
+		return
+	}
+
+	if err := s.apikeys.Revoke(r.Context(), keyID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to revoke key")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"message": "key revoked"})
+}
+
+func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
+	principal := s.requireAuth(w, r)
+	if principal == nil {
+		return
+	}
+
+	keyID := r.PathValue("id")
+	if keyID == "" {
+		writeError(w, http.StatusBadRequest, "key id required")
+		return
+	}
+
+	// Verify ownership first
+	key, err := s.apikeys.Get(r.Context(), keyID)
+	if err != nil {
+		if err == apikeys.ErrKeyNotFound {
+			writeError(w, http.StatusNotFound, "key not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to get key")
+		}
+		return
+	}
+
+	if key.TenantID != principal.TenantID() || key.UserID != principal.Subject {
+		writeError(w, http.StatusNotFound, "key not found")
+		return
+	}
+
+	result, err := s.apikeys.Rotate(r.Context(), keyID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to rotate key")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"key":            result.PlaintextKey,
+		"key_id":         result.Key.ID,
+		"key_prefix":     result.Key.KeyPrefix,
+		"name":           result.Key.Name,
+		"old_key_id":     keyID,
+		"old_key_status": "revoked",
+		"message":        "Save this key securely. It will not be shown again.",
+	})
+}
+
+// Quota handlers
+
+func (s *Server) handleGetQuotas(w http.ResponseWriter, r *http.Request) {
+	principal := s.requireAuth(w, r)
+	if principal == nil {
+		return
+	}
+
+	tenantID := principal.TenantID()
+	userID := principal.Subject
+
+	// Get all quota types for this user
+	quotaTypes := []quota.QuotaType{
+		quota.QuotaTypeRequests,
+		quota.QuotaTypeTokensIn,
+		quota.QuotaTypeTokensOut,
+		quota.QuotaTypeToolCalls,
+	}
+
+	type quotaStatus struct {
+		Type      string  `json:"type"`
+		Limit     int64   `json:"limit"`
+		SoftLimit int64   `json:"soft_limit,omitempty"`
+		Current   int64   `json:"current"`
+		Remaining int64   `json:"remaining"`
+		Percent   float64 `json:"percent_used"`
+		Period    string  `json:"period"`
+	}
+
+	var statuses []quotaStatus
+	for _, qt := range quotaTypes {
+		usage, err := s.quotas.GetUsage(r.Context(), tenantID, userID, qt)
+		if err != nil {
+			continue // Skip if no quota set
+		}
+
+		q, err := s.quotas.GetQuota(r.Context(), tenantID, userID, qt)
+		if err != nil {
+			continue
+		}
+
+		remaining := q.Limit - usage.Current
+		if remaining < 0 {
+			remaining = 0
+		}
+
+		var percent float64
+		if q.Limit > 0 {
+			percent = float64(usage.Current) / float64(q.Limit) * 100
+		}
+
+		statuses = append(statuses, quotaStatus{
+			Type:      string(qt),
+			Limit:     q.Limit,
+			SoftLimit: q.SoftLimit,
+			Current:   usage.Current,
+			Remaining: remaining,
+			Percent:   percent,
+			Period:    string(q.Period),
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"tenant_id": tenantID,
+		"user_id":   userID,
+		"quotas":    statuses,
+	})
 }

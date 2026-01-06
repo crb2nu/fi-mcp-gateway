@@ -64,4 +64,30 @@ var (
 		Name: "mcp_gateway_quota_warning_total",
 		Help: "Total number of requests that triggered soft limit warnings",
 	}, []string{"tenant", "quota_type"})
+
+	// API Key metrics
+	APIKeysCreatedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "mcp_gateway_apikeys_created_total",
+		Help: "Total number of API keys created",
+	}, []string{"tenant"})
+
+	APIKeysRevokedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "mcp_gateway_apikeys_revoked_total",
+		Help: "Total number of API keys revoked",
+	}, []string{"tenant"})
+
+	APIKeysRotatedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "mcp_gateway_apikeys_rotated_total",
+		Help: "Total number of API keys rotated",
+	}, []string{"tenant"})
+
+	APIKeyAuthTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "mcp_gateway_apikey_auth_total",
+		Help: "Total number of API key authentication attempts",
+	}, []string{"tenant", "result"})
+
+	APIKeyAuthFailedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "mcp_gateway_apikey_auth_failed_total",
+		Help: "Total number of failed API key authentication attempts",
+	}, []string{"tenant", "reason"})
 )
