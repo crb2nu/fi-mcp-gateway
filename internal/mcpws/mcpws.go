@@ -288,6 +288,7 @@ type session struct {
 
 	id          string
 	principal   *auth.Principal
+	tenantID    string
 	profile     string
 	boundServer string
 	client      *websocket.Conn
@@ -319,10 +320,18 @@ type callToolParams struct {
 
 func newSession(gw *Gateway, principal *auth.Principal, profile, server string, client *websocket.Conn) *session {
 	now := time.Now()
+
+	// Extract tenant ID from principal claims
+	tenantID := ""
+	if principal != nil {
+		tenantID = principal.TenantID()
+	}
+
 	return &session{
 		gw:          gw,
 		id:          fmt.Sprintf("sess-%d", time.Now().UnixNano()),
 		principal:   principal,
+		tenantID:    tenantID,
 		profile:     profile,
 		boundServer: server,
 		client:      client,
@@ -396,21 +405,17 @@ func (s *session) Run(ctx context.Context) {
 
 		// Rate limit check
 		if s.gw.cfg.RateLimiter != nil {
-			tenant := ""
 			user := ""
 			if s.principal != nil {
 				user = s.principal.Subject
-				if t, ok := s.principal.Claims["tenant_id"].(string); ok {
-					tenant = t
-				}
 			}
-			allowed, retryAfter, err := s.gw.cfg.RateLimiter.CheckMessage(tenant, user, route.toolName)
+			allowed, retryAfter, err := s.gw.cfg.RateLimiter.CheckMessage(s.tenantID, user, route.toolName)
 			if err != nil {
 				log.Printf("ratelimit error: %v", err)
 			}
 			if !allowed {
 				metrics.ErrorsTotal.WithLabelValues("ratelimit").Inc()
-				metrics.RateLimitedTotal.WithLabelValues(tenant, user).Inc()
+				metrics.RateLimitedTotal.WithLabelValues(s.tenantID, user).Inc()
 				errMsg := fmt.Sprintf("rate limited: retry after %v", retryAfter)
 				s.sendJSONRPCError(msg, errMsg)
 				continue
@@ -698,12 +703,18 @@ func (g *Gateway) trackSession(s *session) {
 	defer g.mu.Unlock()
 	g.sessions[s.id] = s
 	metrics.SessionsActive.Inc()
-	log.Printf("ws session open id=%s profile=%s server=%s", s.id, s.profile, s.boundServer)
+	if s.tenantID != "" {
+		metrics.SessionsActiveByTenant.WithLabelValues(s.tenantID).Inc()
+	}
+	log.Printf("ws session open id=%s tenant=%s profile=%s server=%s", s.id, s.tenantID, s.profile, s.boundServer)
 }
 
 func (g *Gateway) untrackSession(id string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if s := g.sessions[id]; s != nil && s.tenantID != "" {
+		metrics.SessionsActiveByTenant.WithLabelValues(s.tenantID).Dec()
+	}
 	delete(g.sessions, id)
 	metrics.SessionsActive.Dec()
 	log.Printf("ws session closed id=%s", id)

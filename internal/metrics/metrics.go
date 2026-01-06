@@ -11,6 +11,11 @@ var (
 		Help: "Current number of active client WebSocket sessions",
 	})
 
+	SessionsActiveByTenant = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "mcp_gateway_sessions_active_by_tenant",
+		Help: "Current number of active sessions per tenant",
+	}, []string{"tenant"})
+
 	MessagesTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "mcp_gateway_messages_total",
 		Help: "Total number of MCP messages processed",
