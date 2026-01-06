@@ -48,4 +48,20 @@ var (
 		Help:    "Time taken to check rate limits",
 		Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1},
 	})
+
+	// Quota metrics
+	QuotaUsageGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "mcp_gateway_quota_usage",
+		Help: "Current quota usage by tenant and type",
+	}, []string{"tenant", "quota_type"})
+
+	QuotaExceededTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "mcp_gateway_quota_exceeded_total",
+		Help: "Total number of requests blocked due to quota exceeded",
+	}, []string{"tenant", "quota_type"})
+
+	QuotaWarningTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "mcp_gateway_quota_warning_total",
+		Help: "Total number of requests that triggered soft limit warnings",
+	}, []string{"tenant", "quota_type"})
 )
