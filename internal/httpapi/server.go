@@ -21,6 +21,7 @@ type Config struct {
 	Registry       *registry.Registry
 	Authenticator  auth.Authenticator
 	Policy         policy.Policy
+	RateLimiter    mcpws.RateLimiter
 }
 
 func New(cfg Config) *Server {
@@ -30,6 +31,7 @@ func New(cfg Config) *Server {
 			Registry:       cfg.Registry,
 			Authenticator:  cfg.Authenticator,
 			Policy:         cfg.Policy,
+			RateLimiter:    cfg.RateLimiter,
 		}),
 	}
 }

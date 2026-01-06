@@ -15,6 +15,11 @@ Guidance for coding agents working in this repository.
 - `go run ./cmd/...`
 - `go test ./...`
 
+## Library Dependencies
+
+- `libs/mcp-go` - Core MCP SDK for server implementations
+- `libs/fi-mcp-kit` - Enterprise orchestration toolkit (registry, config generation)
+
 ## Code Conventions
 - Follow standard Go conventions (Effective Go).
 

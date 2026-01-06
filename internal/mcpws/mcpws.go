@@ -23,10 +23,18 @@ import (
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/policy"
 )
 
+// RateLimiter is an interface for rate limiting within the gateway.
+type RateLimiter interface {
+	// CheckMessage checks if a message should be rate limited.
+	// Returns true if the message is allowed, false if it should be blocked.
+	CheckMessage(tenant, user, tool string) (allowed bool, retryAfter time.Duration, err error)
+}
+
 type Config struct {
 	Registry *registry.Registry
 	Authenticator auth.Authenticator
 	Policy        policy.Policy
+	RateLimiter   RateLimiter
 
 	HubNamespace string
 	ServerPort   string
@@ -384,6 +392,29 @@ func (s *session) Run(ctx context.Context) {
 			metrics.ErrorsTotal.WithLabelValues("route").Inc()
 			s.sendJSONRPCError(msg, "unknown or local-only server")
 			continue
+		}
+
+		// Rate limit check
+		if s.gw.cfg.RateLimiter != nil {
+			tenant := ""
+			user := ""
+			if s.principal != nil {
+				user = s.principal.Subject
+				if t, ok := s.principal.Claims["tenant_id"].(string); ok {
+					tenant = t
+				}
+			}
+			allowed, retryAfter, err := s.gw.cfg.RateLimiter.CheckMessage(tenant, user, route.toolName)
+			if err != nil {
+				log.Printf("ratelimit error: %v", err)
+			}
+			if !allowed {
+				metrics.ErrorsTotal.WithLabelValues("ratelimit").Inc()
+				metrics.RateLimitedTotal.WithLabelValues(tenant, user).Inc()
+				errMsg := fmt.Sprintf("rate limited: retry after %v", retryAfter)
+				s.sendJSONRPCError(msg, errMsg)
+				continue
+			}
 		}
 
 		decision := s.gw.cfg.Policy.Authorize(ctx, s.principal, policy.Request{

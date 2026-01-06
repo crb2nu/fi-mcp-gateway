@@ -13,6 +13,7 @@ import (
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/auth"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/httpapi"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/policy"
+	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/ratelimit"
 )
 
 func main() {
@@ -41,10 +42,24 @@ func main() {
 	policyCfg := policy.LoadConfigFromEnv(reg)
 	pol := policy.New(policyCfg)
 
+	// Initialize rate limiter
+	rateLimitCfg := ratelimit.LoadConfigFromEnv()
+	rateLimiter, err := ratelimit.New(rateLimitCfg)
+	if err != nil {
+		log.Fatalf("ratelimit init: %v", err)
+	}
+	defer rateLimiter.Close()
+
+	var rateLimitAdapter *ratelimit.GatewayAdapter
+	if rateLimiter.Enabled() {
+		rateLimitAdapter = ratelimit.NewGatewayAdapter(rateLimiter)
+	}
+
 	api := httpapi.New(httpapi.Config{
 		Registry:      reg,
 		Authenticator: auther,
 		Policy:        pol,
+		RateLimiter:   rateLimitAdapter,
 	})
 	srv := &http.Server{
 		Addr:              *listenAddress,
@@ -55,6 +70,7 @@ func main() {
 	log.Printf("fi-mcp-gateway listening on %s", *listenAddress)
 	log.Printf("registry: %s (%d servers)", *registryPath, len(reg.Servers))
 	log.Printf("auth: mode=%s required=%t", authCfg.Mode, authCfg.Required)
+	log.Printf("ratelimit: enabled=%t store=%s", rateLimitCfg.Enabled, rateLimitCfg.Store)
 	log.Printf("health: http://localhost%s/health", addrForLog(*listenAddress))
 
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
