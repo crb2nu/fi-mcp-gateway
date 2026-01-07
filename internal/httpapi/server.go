@@ -47,6 +47,8 @@ func New(cfg Config) *Server {
 			Authenticator: cfg.Authenticator,
 			Policy:        cfg.Policy,
 			RateLimiter:   cfg.RateLimiter,
+			UsageTracker:  cfg.Usage,
+			QuotaManager:  cfg.Quotas,
 		}),
 	}
 }

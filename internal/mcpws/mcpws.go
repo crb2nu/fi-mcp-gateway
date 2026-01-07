@@ -22,6 +22,8 @@ import (
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/auth"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/metrics"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/policy"
+	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/quota"
+	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/usage"
 )
 
 // RateLimiter is an interface for rate limiting within the gateway.
@@ -36,6 +38,8 @@ type Config struct {
 	Authenticator auth.Authenticator
 	Policy        policy.Policy
 	RateLimiter   RateLimiter
+	UsageTracker  usage.Tracker
+	QuotaManager  quota.Manager
 
 	HubNamespace string
 	ServerPort   string
@@ -422,11 +426,11 @@ func (s *session) Run(ctx context.Context) {
 		}
 
 		// Rate limit check
+		user := ""
+		if s.principal != nil {
+			user = s.principal.Subject
+		}
 		if s.gw.cfg.RateLimiter != nil {
-			user := ""
-			if s.principal != nil {
-				user = s.principal.Subject
-			}
 			allowed, retryAfter, err := s.gw.cfg.RateLimiter.CheckMessage(s.tenantID, user, route.toolName)
 			if err != nil {
 				log.Printf("ratelimit error: %v", err)
@@ -436,6 +440,21 @@ func (s *session) Run(ctx context.Context) {
 				metrics.RateLimitedTotal.WithLabelValues(s.tenantID, user).Inc()
 				errMsg := fmt.Sprintf("rate limited: retry after %v", retryAfter)
 				s.sendJSONRPCError(msg, errMsg)
+				continue
+			}
+		}
+
+		// Quota check for tool calls
+		if s.gw.cfg.QuotaManager != nil && route.method == "tools/call" {
+			result, err := s.gw.cfg.QuotaManager.Check(ctx, s.tenantID, user, quota.QuotaTypeToolCalls, 1)
+			if err != nil {
+				metrics.ErrorsTotal.WithLabelValues("quota").Inc()
+				s.sendJSONRPCError(msg, "quota exceeded")
+				continue
+			}
+			if !result.Allowed {
+				metrics.ErrorsTotal.WithLabelValues("quota").Inc()
+				s.sendJSONRPCError(msg, fmt.Sprintf("quota exceeded: %d/%d tool calls used", result.Current, result.Limit))
 				continue
 			}
 		}
@@ -462,11 +481,24 @@ func (s *session) Run(ctx context.Context) {
 		}
 
 		b.touch()
+		startTime := time.Now()
 		if err := b.tr.WriteMessage(msgType, msg); err != nil {
 			s.dropBackend(route.serverName, true)
 			s.sendJSONRPCError(msg, "backend write failed")
+			// Track failed usage
+			s.trackUsage(ctx, route, user, startTime, false, "backend_write_failed")
 			continue
 		}
+
+		// Increment quota for successful tool calls
+		if s.gw.cfg.QuotaManager != nil && route.method == "tools/call" {
+			if err := s.gw.cfg.QuotaManager.Increment(ctx, s.tenantID, user, quota.QuotaTypeToolCalls, 1); err != nil {
+				log.Printf("quota increment error: %v", err)
+			}
+		}
+
+		// Track successful usage
+		s.trackUsage(ctx, route, user, startTime, true, "")
 	}
 }
 
@@ -715,6 +747,36 @@ func (s *session) sendJSONRPCError(requestRaw []byte, message string) {
 	if s.client != nil {
 		_ = s.client.WriteJSON(resp)
 	}
+}
+
+// trackUsage records a usage event for tool calls.
+func (s *session) trackUsage(ctx context.Context, route routeDecision, userID string, startTime time.Time, success bool, errorCode string) {
+	if s.gw.cfg.UsageTracker == nil {
+		return
+	}
+
+	// Only track tool calls
+	if route.method != "tools/call" {
+		return
+	}
+
+	event := usage.Event{
+		ID:        fmt.Sprintf("evt-%d", time.Now().UnixNano()),
+		Timestamp: startTime,
+		TenantID:  s.tenantID,
+		UserID:    userID,
+		ToolName:  route.toolName,
+		ServerID:  route.serverName,
+		Duration:  time.Since(startTime),
+		Success:   success,
+		ErrorCode: errorCode,
+		Metadata: map[string]string{
+			"session_id": s.id,
+			"profile":    s.profile,
+		},
+	}
+
+	s.gw.cfg.UsageTracker.Track(ctx, event)
 }
 
 func (g *Gateway) trackSession(s *session) {
