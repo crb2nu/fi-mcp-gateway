@@ -87,8 +87,8 @@ func TestPatternPolicy_RespectsRegistryAlwaysAllow(t *testing.T) {
 	}
 
 	p := New(Config{
-		DefaultAllow:              false,
-		Registry:                 reg,
+		DefaultAllow:               false,
+		Registry:                   reg,
 		RespectRegistryAlwaysAllow: true,
 	})
 	d := p.Authorize(context.Background(), &auth.Principal{Subject: "u"}, Request{
@@ -100,4 +100,3 @@ func TestPatternPolicy_RespectsRegistryAlwaysAllow(t *testing.T) {
 		t.Fatalf("expected allow, got %#v", d)
 	}
 }
-

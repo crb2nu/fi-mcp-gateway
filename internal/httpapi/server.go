@@ -26,13 +26,13 @@ type Server struct {
 }
 
 type Config struct {
-	Registry       *registry.Registry
-	Authenticator  auth.Authenticator
-	Policy         policy.Policy
-	RateLimiter    mcpws.RateLimiter
-	APIKeys        apikeys.Manager
-	Quotas         quota.Manager
-	Usage          usage.Tracker
+	Registry      *registry.Registry
+	Authenticator auth.Authenticator
+	Policy        policy.Policy
+	RateLimiter   mcpws.RateLimiter
+	APIKeys       apikeys.Manager
+	Quotas        quota.Manager
+	Usage         usage.Tracker
 }
 
 func New(cfg Config) *Server {
@@ -493,15 +493,15 @@ func (s *Server) handleGetUsage(w http.ResponseWriter, r *http.Request) {
 
 	// Convert duration to milliseconds for JSON
 	writeJSON(w, http.StatusOK, map[string]any{
-		"tenant_id":        tenantID,
-		"user_id":          userID,
-		"period_start":     start,
-		"period_end":       end,
-		"total_events":     summary.TotalEvents,
-		"success_count":    summary.SuccessCount,
-		"error_count":      summary.ErrorCount,
-		"total_tokens_in":  summary.TotalTokensIn,
-		"total_tokens_out": summary.TotalTokensOut,
+		"tenant_id":         tenantID,
+		"user_id":           userID,
+		"period_start":      start,
+		"period_end":        end,
+		"total_events":      summary.TotalEvents,
+		"success_count":     summary.SuccessCount,
+		"error_count":       summary.ErrorCount,
+		"total_tokens_in":   summary.TotalTokensIn,
+		"total_tokens_out":  summary.TotalTokensOut,
 		"total_duration_ms": summary.TotalDuration.Milliseconds(),
 		"avg_duration_ms":   summary.AvgDuration.Milliseconds(),
 		"tool_breakdown":    summary.ToolBreakdown,

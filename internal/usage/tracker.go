@@ -12,16 +12,16 @@ import (
 
 // DefaultTracker implements the Tracker interface with buffered async collection.
 type DefaultTracker struct {
-	store         Store
-	cfg           Config
-	enabled       bool
+	store   Store
+	cfg     Config
+	enabled bool
 
 	// Buffering
-	buffer        []Event
-	bufferMu      sync.Mutex
-	flushChan     chan struct{}
-	done          chan struct{}
-	wg            sync.WaitGroup
+	buffer    []Event
+	bufferMu  sync.Mutex
+	flushChan chan struct{}
+	done      chan struct{}
+	wg        sync.WaitGroup
 }
 
 // New creates a new usage tracker from configuration.

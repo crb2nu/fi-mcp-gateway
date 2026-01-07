@@ -31,17 +31,17 @@ func TestGateway_ForwardsJSONRPCOverWebSocket(t *testing.T) {
 	}
 
 	gw := New(Config{
-		Registry:            reg,
-		HubNamespace:        "ignored",
-		ServerScheme:        "ws",
-		ServerHostTemplate:  "127.0.0.1",
-		ServerPort:          strconv.Itoa(backendPort),
-		ServerWSPath:        "/ws",
-		HandshakeTimeout:    2 * time.Second,
-		DialTimeout:         2 * time.Second,
-		BackendMaxIdle:      1,
-		BackendMaxOpen:      2,
-		BackendIdleTimeout:  5 * time.Second,
+		Registry:           reg,
+		HubNamespace:       "ignored",
+		ServerScheme:       "ws",
+		ServerHostTemplate: "127.0.0.1",
+		ServerPort:         strconv.Itoa(backendPort),
+		ServerWSPath:       "/ws",
+		HandshakeTimeout:   2 * time.Second,
+		DialTimeout:        2 * time.Second,
+		BackendMaxIdle:     1,
+		BackendMaxOpen:     2,
+		BackendIdleTimeout: 5 * time.Second,
 	})
 
 	mux := http.NewServeMux()
@@ -139,11 +139,11 @@ func TestGateway_WS_AuthRequired(t *testing.T) {
 	}
 
 	gw := New(Config{
-		Registry:       reg,
-		Authenticator:  headerTokenAuth{},
-		Policy:         policy.AllowAll{},
+		Registry:           reg,
+		Authenticator:      headerTokenAuth{},
+		Policy:             policy.AllowAll{},
 		ServerHostTemplate: "127.0.0.1",
-		ServerPort:     "1",
+		ServerPort:         "1",
 	})
 
 	mux := http.NewServeMux()
@@ -189,15 +189,15 @@ func TestGateway_PolicyDeniesToolsCallWithoutDial(t *testing.T) {
 	}
 
 	gw := New(Config{
-		Registry:            reg,
-		Policy:              denyToolsCallPolicy{},
-		ServerScheme:        "ws",
-		ServerHostTemplate:  "127.0.0.1",
-		ServerPort:          strconv.Itoa(backendPort),
-		ServerWSPath:        "/ws",
-		HandshakeTimeout:    2 * time.Second,
-		DialTimeout:         2 * time.Second,
-		BackendIdleTimeout:  5 * time.Second,
+		Registry:           reg,
+		Policy:             denyToolsCallPolicy{},
+		ServerScheme:       "ws",
+		ServerHostTemplate: "127.0.0.1",
+		ServerPort:         strconv.Itoa(backendPort),
+		ServerWSPath:       "/ws",
+		HandshakeTimeout:   2 * time.Second,
+		DialTimeout:        2 * time.Second,
+		BackendIdleTimeout: 5 * time.Second,
 	})
 
 	mux := http.NewServeMux()
@@ -244,17 +244,17 @@ func TestGateway_RoutesByToolPrefixAndReusesConnection(t *testing.T) {
 	}
 
 	gw := New(Config{
-		Registry:            reg,
-		HubNamespace:        "ignored",
-		ServerScheme:        "ws",
-		ServerHostTemplate:  "127.0.0.1",
-		ServerPort:          strconv.Itoa(backendPort),
-		ServerWSPath:        "/ws",
-		HandshakeTimeout:    2 * time.Second,
-		DialTimeout:         2 * time.Second,
-		BackendMaxIdle:      1,
-		BackendMaxOpen:      2,
-		BackendIdleTimeout:  5 * time.Second,
+		Registry:           reg,
+		HubNamespace:       "ignored",
+		ServerScheme:       "ws",
+		ServerHostTemplate: "127.0.0.1",
+		ServerPort:         strconv.Itoa(backendPort),
+		ServerWSPath:       "/ws",
+		HandshakeTimeout:   2 * time.Second,
+		DialTimeout:        2 * time.Second,
+		BackendMaxIdle:     1,
+		BackendMaxOpen:     2,
+		BackendIdleTimeout: 5 * time.Second,
 	})
 
 	mux := http.NewServeMux()
@@ -325,17 +325,17 @@ func TestGateway_BackendIdleTimeoutClosesAndRedials(t *testing.T) {
 	}
 
 	gw := New(Config{
-		Registry:            reg,
-		HubNamespace:        "ignored",
-		ServerScheme:        "ws",
-		ServerHostTemplate:  "127.0.0.1",
-		ServerPort:          strconv.Itoa(backendPort),
-		ServerWSPath:        "/ws",
-		HandshakeTimeout:    2 * time.Second,
-		DialTimeout:         2 * time.Second,
-		BackendMaxIdle:      1,
-		BackendMaxOpen:      2,
-		BackendIdleTimeout:  80 * time.Millisecond,
+		Registry:           reg,
+		HubNamespace:       "ignored",
+		ServerScheme:       "ws",
+		ServerHostTemplate: "127.0.0.1",
+		ServerPort:         strconv.Itoa(backendPort),
+		ServerWSPath:       "/ws",
+		HandshakeTimeout:   2 * time.Second,
+		DialTimeout:        2 * time.Second,
+		BackendMaxIdle:     1,
+		BackendMaxOpen:     2,
+		BackendIdleTimeout: 80 * time.Millisecond,
 	})
 
 	mux := http.NewServeMux()

@@ -54,4 +54,3 @@ func PrincipalFromContext(ctx context.Context) *Principal {
 	p, _ := ctx.Value(principalKey).(*Principal)
 	return p
 }
-

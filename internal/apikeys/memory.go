@@ -7,9 +7,9 @@ import (
 
 // MemoryStore implements Store using in-memory storage.
 type MemoryStore struct {
-	mu         sync.RWMutex
-	keys       map[string]APIKey // ID -> key
-	hashIndex  map[string]string // hash -> ID
+	mu        sync.RWMutex
+	keys      map[string]APIKey // ID -> key
+	hashIndex map[string]string // hash -> ID
 }
 
 // NewMemoryStore creates a new in-memory API key store.

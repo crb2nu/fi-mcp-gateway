@@ -13,33 +13,33 @@ import (
 
 // Event represents a single usage event.
 type Event struct {
-	ID        string    `json:"id"`
-	Timestamp time.Time `json:"timestamp"`
-	TenantID  string    `json:"tenant_id"`
-	UserID    string    `json:"user_id,omitempty"`
-	ToolName  string    `json:"tool_name,omitempty"`
-	ServerID  string    `json:"server_id,omitempty"`
-	Duration  time.Duration `json:"duration_ms"`
-	TokensIn  int64     `json:"tokens_in,omitempty"`
-	TokensOut int64     `json:"tokens_out,omitempty"`
-	Success   bool      `json:"success"`
-	ErrorCode string    `json:"error_code,omitempty"`
+	ID        string            `json:"id"`
+	Timestamp time.Time         `json:"timestamp"`
+	TenantID  string            `json:"tenant_id"`
+	UserID    string            `json:"user_id,omitempty"`
+	ToolName  string            `json:"tool_name,omitempty"`
+	ServerID  string            `json:"server_id,omitempty"`
+	Duration  time.Duration     `json:"duration_ms"`
+	TokensIn  int64             `json:"tokens_in,omitempty"`
+	TokensOut int64             `json:"tokens_out,omitempty"`
+	Success   bool              `json:"success"`
+	ErrorCode string            `json:"error_code,omitempty"`
 	Metadata  map[string]string `json:"metadata,omitempty"`
 }
 
 // Summary aggregates usage statistics over a time period.
 type Summary struct {
-	TenantID     string    `json:"tenant_id"`
-	UserID       string    `json:"user_id,omitempty"`
-	PeriodStart  time.Time `json:"period_start"`
-	PeriodEnd    time.Time `json:"period_end"`
-	TotalEvents  int64     `json:"total_events"`
-	SuccessCount int64     `json:"success_count"`
-	ErrorCount   int64     `json:"error_count"`
-	TotalTokensIn  int64   `json:"total_tokens_in"`
-	TotalTokensOut int64   `json:"total_tokens_out"`
-	TotalDuration  time.Duration `json:"total_duration_ms"`
-	AvgDuration    time.Duration `json:"avg_duration_ms"`
+	TenantID       string           `json:"tenant_id"`
+	UserID         string           `json:"user_id,omitempty"`
+	PeriodStart    time.Time        `json:"period_start"`
+	PeriodEnd      time.Time        `json:"period_end"`
+	TotalEvents    int64            `json:"total_events"`
+	SuccessCount   int64            `json:"success_count"`
+	ErrorCount     int64            `json:"error_count"`
+	TotalTokensIn  int64            `json:"total_tokens_in"`
+	TotalTokensOut int64            `json:"total_tokens_out"`
+	TotalDuration  time.Duration    `json:"total_duration_ms"`
+	AvgDuration    time.Duration    `json:"avg_duration_ms"`
 	ToolBreakdown  map[string]int64 `json:"tool_breakdown,omitempty"`
 }
 

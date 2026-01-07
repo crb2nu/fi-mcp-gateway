@@ -31,7 +31,7 @@ type RateLimiter interface {
 }
 
 type Config struct {
-	Registry *registry.Registry
+	Registry      *registry.Registry
 	Authenticator auth.Authenticator
 	Policy        policy.Policy
 	RateLimiter   RateLimiter
@@ -382,7 +382,7 @@ func (s *session) Run(ctx context.Context) {
 		if msgType != websocket.TextMessage && msgType != websocket.BinaryMessage {
 			continue
 		}
-		
+
 		msgTypeStr := "binary"
 		if msgType == websocket.TextMessage {
 			msgTypeStr = "text"
@@ -658,7 +658,7 @@ func (s *session) pumpBackendToClient(ctx context.Context, b *backend) {
 		if err := s.writeToClient(msgType, msg); err != nil {
 			return
 		}
-		
+
 		msgTypeStr := "binary"
 		if msgType == websocket.TextMessage {
 			msgTypeStr = "text"

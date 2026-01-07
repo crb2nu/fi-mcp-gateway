@@ -8,19 +8,19 @@ import (
 
 func TestQuota_IsUserQuota(t *testing.T) {
 	tests := []struct {
-		name   string
-		quota  Quota
-		want   bool
+		name  string
+		quota Quota
+		want  bool
 	}{
 		{
-			name:   "tenant quota",
-			quota:  Quota{TenantID: "acme", UserID: ""},
-			want:   false,
+			name:  "tenant quota",
+			quota: Quota{TenantID: "acme", UserID: ""},
+			want:  false,
 		},
 		{
-			name:   "user quota",
-			quota:  Quota{TenantID: "acme", UserID: "alice"},
-			want:   true,
+			name:  "user quota",
+			quota: Quota{TenantID: "acme", UserID: "alice"},
+			want:  true,
 		},
 	}
 

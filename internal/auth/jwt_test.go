@@ -151,4 +151,3 @@ func startJWKS(t *testing.T) (*rsa.PrivateKey, string) {
 
 	return priv, ts.URL
 }
-

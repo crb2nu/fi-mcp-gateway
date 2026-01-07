@@ -187,7 +187,7 @@ func TestTracker_BufferFlush(t *testing.T) {
 	tracker, err := New(Config{
 		Enabled:       true,
 		Store:         "memory",
-		BufferSize:    3, // Small buffer
+		BufferSize:    3,         // Small buffer
 		FlushInterval: time.Hour, // Long interval to test buffer flush
 	})
 	if err != nil {

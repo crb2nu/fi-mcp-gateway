@@ -28,10 +28,9 @@ func TestMetricsEndpoint(t *testing.T) {
 	if !strings.Contains(body, "mcp_gateway_sessions_active") {
 		t.Errorf("expected metrics to contain 'mcp_gateway_sessions_active', got:\n%s", body)
 	}
-	
+
 	// Check for the value 1
 	if !strings.Contains(body, "mcp_gateway_sessions_active 1") {
 		t.Errorf("expected 'mcp_gateway_sessions_active 1', got:\n%s", body)
 	}
 }
-

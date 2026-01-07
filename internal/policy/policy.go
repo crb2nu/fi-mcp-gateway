@@ -40,7 +40,7 @@ type PatternPolicy struct {
 	allowMethods []string
 	denyMethods  []string
 
-	registry                *registry.Registry
+	registry                   *registry.Registry
 	respectRegistryAlwaysAllow bool
 }
 
@@ -60,12 +60,12 @@ type Config struct {
 
 func New(cfg Config) *PatternPolicy {
 	return &PatternPolicy{
-		defaultAllow:             cfg.DefaultAllow,
-		allowTools:               cfg.AllowTools,
-		denyTools:                cfg.DenyTools,
-		allowMethods:             cfg.AllowMethods,
-		denyMethods:              cfg.DenyMethods,
-		registry:                 cfg.Registry,
+		defaultAllow:               cfg.DefaultAllow,
+		allowTools:                 cfg.AllowTools,
+		denyTools:                  cfg.DenyTools,
+		allowMethods:               cfg.AllowMethods,
+		denyMethods:                cfg.DenyMethods,
+		registry:                   cfg.Registry,
 		respectRegistryAlwaysAllow: cfg.RespectRegistryAlwaysAllow,
 	}
 }
@@ -77,12 +77,12 @@ func LoadConfigFromEnv(reg *registry.Registry) Config {
 	respect := strings.EqualFold(envDefault("FI_MCP_POLICY_RESPECT_ALWAYS_ALLOW", "true"), "true")
 
 	return Config{
-		DefaultAllow: defaultAllow,
-		AllowTools:   splitCSV(os.Getenv("FI_MCP_POLICY_ALLOW_TOOLS")),
-		DenyTools:    splitCSV(os.Getenv("FI_MCP_POLICY_DENY_TOOLS")),
-		AllowMethods: splitCSV(os.Getenv("FI_MCP_POLICY_ALLOW_METHODS")),
-		DenyMethods:  splitCSV(os.Getenv("FI_MCP_POLICY_DENY_METHODS")),
-		Registry:     reg,
+		DefaultAllow:               defaultAllow,
+		AllowTools:                 splitCSV(os.Getenv("FI_MCP_POLICY_ALLOW_TOOLS")),
+		DenyTools:                  splitCSV(os.Getenv("FI_MCP_POLICY_DENY_TOOLS")),
+		AllowMethods:               splitCSV(os.Getenv("FI_MCP_POLICY_ALLOW_METHODS")),
+		DenyMethods:                splitCSV(os.Getenv("FI_MCP_POLICY_DENY_METHODS")),
+		Registry:                   reg,
 		RespectRegistryAlwaysAllow: respect,
 	}
 }
@@ -206,4 +206,3 @@ func splitCSV(s string) []string {
 	}
 	return out
 }
-
