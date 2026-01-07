@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/billing"
 )
 
 // QuotaType represents the type of resource being limited.
@@ -121,6 +123,8 @@ type Manager interface {
 	SetQuota(ctx context.Context, quota Quota) error
 	// GetQuota retrieves a quota definition.
 	GetQuota(ctx context.Context, tenantID, userID string, quotaType QuotaType) (Quota, error)
+	// SetWebhookSender sets the billing webhook sender for quota events.
+	SetWebhookSender(sender billing.WebhookSender)
 	// Close releases resources.
 	Close() error
 }

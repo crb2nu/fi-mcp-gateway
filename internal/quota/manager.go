@@ -6,15 +6,17 @@ import (
 	"log"
 	"time"
 
+	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/billing"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/metrics"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/storage"
 )
 
 // DefaultManager implements the Manager interface.
 type DefaultManager struct {
-	store   Store
-	cfg     Config
-	enabled bool
+	store         Store
+	cfg           Config
+	enabled       bool
+	webhookSender billing.WebhookSender
 }
 
 // New creates a new quota manager from configuration.
@@ -116,11 +118,26 @@ func (m *DefaultManager) Check(ctx context.Context, tenantID, userID string, quo
 			log.Printf("quota: soft limit warning tenant=%s user=%s type=%s usage=%d/%d",
 				tenantID, userID, quotaType, usage.Current, quota.SoftLimit)
 		}
+		// Send webhook for soft limit warning
+		m.sendWebhook(billing.EventQuotaWarning, tenantID, userID, map[string]any{
+			"quota_type": string(quotaType),
+			"current":    usage.Current,
+			"soft_limit": quota.SoftLimit,
+			"hard_limit": quota.Limit,
+			"reset_at":   periodEnd,
+		})
 	}
 
 	// Check hard limit
 	if newUsage > quota.Limit {
 		result.Allowed = false
+		// Send webhook for hard limit exceeded
+		m.sendWebhook(billing.EventQuotaExceeded, tenantID, userID, map[string]any{
+			"quota_type": string(quotaType),
+			"current":    usage.Current,
+			"limit":      quota.Limit,
+			"reset_at":   periodEnd,
+		})
 		if m.cfg.EnforceHard {
 			metrics.QuotaExceededTotal.WithLabelValues(tenantID, string(quotaType)).Inc()
 			return result, ErrQuotaExceeded
@@ -203,6 +220,25 @@ func (m *DefaultManager) Enabled() bool {
 	return m.enabled
 }
 
+// SetWebhookSender sets the billing webhook sender for quota events.
+func (m *DefaultManager) SetWebhookSender(sender billing.WebhookSender) {
+	m.webhookSender = sender
+}
+
+// sendWebhook sends a billing webhook event asynchronously.
+func (m *DefaultManager) sendWebhook(eventType billing.EventType, tenantID, userID string, data map[string]any) {
+	if m.webhookSender == nil {
+		return
+	}
+	event := billing.Event{
+		Type:     eventType,
+		TenantID: tenantID,
+		UserID:   userID,
+		Data:     data,
+	}
+	m.webhookSender.SendAsync(event)
+}
+
 // getEffectiveQuota finds the applicable quota, checking user-level first.
 func (m *DefaultManager) getEffectiveQuota(ctx context.Context, tenantID, userID string, quotaType QuotaType) (Quota, error) {
 	// Try user-specific quota first
@@ -263,6 +299,8 @@ func (NoopManager) SetQuota(ctx context.Context, quota Quota) error {
 func (NoopManager) GetQuota(ctx context.Context, tenantID, userID string, quotaType QuotaType) (Quota, error) {
 	return Quota{}, ErrQuotaNotFound
 }
+
+func (NoopManager) SetWebhookSender(sender billing.WebhookSender) {}
 
 func (NoopManager) Close() error {
 	return nil
