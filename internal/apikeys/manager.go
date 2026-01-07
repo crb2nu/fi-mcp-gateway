@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/metrics"
+	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/storage"
 )
 
 // DefaultManager implements the Manager interface.
@@ -26,12 +27,16 @@ func New(cfg Config) (*DefaultManager, error) {
 	}
 
 	var store Store
+	var err error
 
 	switch cfg.Store {
 	case "memory", "":
 		store = NewMemoryStore()
-	// case "postgres":
-	// 	PostgresStore to be implemented similar to quota
+	case "postgres":
+		store, err = newPostgresStoreFromConfig(cfg)
+		if err != nil {
+			return nil, err
+		}
 	default:
 		return nil, fmt.Errorf("unknown api key store: %s", cfg.Store)
 	}
@@ -252,6 +257,30 @@ func (m *DefaultManager) Enabled() bool {
 
 func hasPrefix(s, prefix string) bool {
 	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
+}
+
+// newPostgresStoreFromConfig creates a Postgres store from configuration.
+func newPostgresStoreFromConfig(cfg Config) (*PostgresStore, error) {
+	pgCfg := storage.PostgresConfig{
+		URL: cfg.PostgresURL,
+	}
+
+	pg, err := storage.NewPostgres(pgCfg)
+	if err != nil {
+		return nil, fmt.Errorf("create postgres client: %w", err)
+	}
+
+	ctx := context.Background()
+	if err := pg.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("postgres ping: %w", err)
+	}
+
+	// Run migrations
+	if err := pg.MigrateAPIKeysSchema(ctx); err != nil {
+		return nil, fmt.Errorf("migrate schema: %w", err)
+	}
+
+	return NewPostgresStore(pg), nil
 }
 
 // NoopManager is a manager that does nothing.

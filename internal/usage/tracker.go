@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/storage"
 )
 
 // DefaultTracker implements the Tracker interface with buffered async collection.
@@ -34,12 +35,16 @@ func New(cfg Config) (*DefaultTracker, error) {
 	}
 
 	var store Store
+	var err error
 
 	switch cfg.Store {
 	case "memory", "":
 		store = NewMemoryStore()
-	// case "postgres":
-	// 	PostgresStore to be implemented
+	case "postgres":
+		store, err = newPostgresStoreFromConfig(cfg)
+		if err != nil {
+			return nil, err
+		}
 	default:
 		return nil, fmt.Errorf("unknown usage store: %s", cfg.Store)
 	}
@@ -179,6 +184,30 @@ func (t *DefaultTracker) flushWorker() {
 			t.flush()
 		}
 	}
+}
+
+// newPostgresStoreFromConfig creates a Postgres store from configuration.
+func newPostgresStoreFromConfig(cfg Config) (*PostgresStore, error) {
+	pgCfg := storage.PostgresConfig{
+		URL: cfg.PostgresURL,
+	}
+
+	pg, err := storage.NewPostgres(pgCfg)
+	if err != nil {
+		return nil, fmt.Errorf("create postgres client: %w", err)
+	}
+
+	ctx := context.Background()
+	if err := pg.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("postgres ping: %w", err)
+	}
+
+	// Run migrations
+	if err := pg.MigrateUsageSchema(ctx); err != nil {
+		return nil, fmt.Errorf("migrate schema: %w", err)
+	}
+
+	return NewPostgresStore(pg), nil
 }
 
 // NoopTracker is a tracker that does nothing.

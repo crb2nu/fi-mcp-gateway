@@ -178,6 +178,66 @@ func (p *Postgres) MigrateQuotaSchema(ctx context.Context) error {
 	return err
 }
 
+// MigrateUsageSchema runs database migrations for usage event tables.
+func (p *Postgres) MigrateUsageSchema(ctx context.Context) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS usage_events (
+		id VARCHAR(255) PRIMARY KEY,
+		tenant_id VARCHAR(255) NOT NULL,
+		user_id VARCHAR(255) NOT NULL DEFAULT '',
+		tool_name VARCHAR(255),
+		server_id VARCHAR(255),
+		timestamp TIMESTAMPTZ NOT NULL,
+		duration_ns BIGINT NOT NULL DEFAULT 0,
+		tokens_in BIGINT NOT NULL DEFAULT 0,
+		tokens_out BIGINT NOT NULL DEFAULT 0,
+		success BOOLEAN NOT NULL DEFAULT true,
+		error_code VARCHAR(100),
+		metadata JSONB
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_usage_events_tenant_time
+	ON usage_events (tenant_id, timestamp DESC);
+
+	CREATE INDEX IF NOT EXISTS idx_usage_events_user_time
+	ON usage_events (tenant_id, user_id, timestamp DESC);
+
+	CREATE INDEX IF NOT EXISTS idx_usage_events_tool
+	ON usage_events (tenant_id, tool_name, timestamp DESC);
+	`
+
+	_, err := p.db.ExecContext(ctx, schema)
+	return err
+}
+
+// MigrateAPIKeysSchema runs database migrations for API key tables.
+func (p *Postgres) MigrateAPIKeysSchema(ctx context.Context) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS api_keys (
+		id VARCHAR(255) PRIMARY KEY,
+		tenant_id VARCHAR(255) NOT NULL,
+		user_id VARCHAR(255) NOT NULL,
+		name VARCHAR(255) NOT NULL,
+		key_hash VARCHAR(255) NOT NULL UNIQUE,
+		key_prefix VARCHAR(20) NOT NULL,
+		scopes TEXT[],
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		expires_at TIMESTAMPTZ,
+		last_used_at TIMESTAMPTZ,
+		revoked_at TIMESTAMPTZ
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_api_keys_tenant_user
+	ON api_keys (tenant_id, user_id);
+
+	CREATE INDEX IF NOT EXISTS idx_api_keys_hash
+	ON api_keys (key_hash);
+	`
+
+	_, err := p.db.ExecContext(ctx, schema)
+	return err
+}
+
 func envIntDefault2(key string, fallback int) int {
 	v := strings.TrimSpace(os.Getenv(key))
 	if v == "" {
