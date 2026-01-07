@@ -13,6 +13,7 @@ import (
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/mcpws"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/policy"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/quota"
+	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/usage"
 )
 
 type Server struct {
@@ -21,6 +22,7 @@ type Server struct {
 	authenticator auth.Authenticator
 	apikeys       apikeys.Manager
 	quotas        quota.Manager
+	usage         usage.Tracker
 }
 
 type Config struct {
@@ -30,6 +32,7 @@ type Config struct {
 	RateLimiter    mcpws.RateLimiter
 	APIKeys        apikeys.Manager
 	Quotas         quota.Manager
+	Usage          usage.Tracker
 }
 
 func New(cfg Config) *Server {
@@ -38,6 +41,7 @@ func New(cfg Config) *Server {
 		authenticator: cfg.Authenticator,
 		apikeys:       cfg.APIKeys,
 		quotas:        cfg.Quotas,
+		usage:         cfg.Usage,
 		ws: mcpws.New(mcpws.Config{
 			Registry:      cfg.Registry,
 			Authenticator: cfg.Authenticator,
@@ -107,6 +111,12 @@ func (s *Server) Handler() http.Handler {
 	// Quota status endpoint
 	if s.quotas != nil {
 		mux.HandleFunc("GET /api/v1/quotas", s.handleGetQuotas)
+	}
+
+	// Usage analytics endpoints
+	if s.usage != nil {
+		mux.HandleFunc("GET /api/v1/usage", s.handleGetUsage)
+		mux.HandleFunc("GET /api/v1/usage/export", s.handleExportUsage)
 	}
 
 	// WebSocket MCP gateway (server-bound, v0).
@@ -398,7 +408,7 @@ func (s *Server) handleGetQuotas(w http.ResponseWriter, r *http.Request) {
 
 	var statuses []quotaStatus
 	for _, qt := range quotaTypes {
-		usage, err := s.quotas.GetUsage(r.Context(), tenantID, userID, qt)
+		quotaUsage, err := s.quotas.GetUsage(r.Context(), tenantID, userID, qt)
 		if err != nil {
 			continue // Skip if no quota set
 		}
@@ -408,21 +418,21 @@ func (s *Server) handleGetQuotas(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		remaining := q.Limit - usage.Current
+		remaining := q.Limit - quotaUsage.Current
 		if remaining < 0 {
 			remaining = 0
 		}
 
 		var percent float64
 		if q.Limit > 0 {
-			percent = float64(usage.Current) / float64(q.Limit) * 100
+			percent = float64(quotaUsage.Current) / float64(q.Limit) * 100
 		}
 
 		statuses = append(statuses, quotaStatus{
 			Type:      string(qt),
 			Limit:     q.Limit,
 			SoftLimit: q.SoftLimit,
-			Current:   usage.Current,
+			Current:   quotaUsage.Current,
 			Remaining: remaining,
 			Percent:   percent,
 			Period:    string(q.Period),
@@ -434,4 +444,151 @@ func (s *Server) handleGetQuotas(w http.ResponseWriter, r *http.Request) {
 		"user_id":   userID,
 		"quotas":    statuses,
 	})
+}
+
+// Usage handlers
+
+func (s *Server) handleGetUsage(w http.ResponseWriter, r *http.Request) {
+	principal := s.requireAuth(w, r)
+	if principal == nil {
+		return
+	}
+
+	tenantID := principal.TenantID()
+	userID := principal.Subject
+
+	// Parse time range from query params
+	startStr := r.URL.Query().Get("start")
+	endStr := r.URL.Query().Get("end")
+
+	var start, end time.Time
+	if startStr != "" {
+		var err error
+		start, err = time.Parse(time.RFC3339, startStr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid start time format (use RFC3339)")
+			return
+		}
+	} else {
+		// Default to last 24 hours
+		start = time.Now().Add(-24 * time.Hour)
+	}
+
+	if endStr != "" {
+		var err error
+		end, err = time.Parse(time.RFC3339, endStr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid end time format (use RFC3339)")
+			return
+		}
+	} else {
+		end = time.Now()
+	}
+
+	summary, err := s.usage.GetSummary(r.Context(), tenantID, userID, start, end)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get usage summary")
+		return
+	}
+
+	// Convert duration to milliseconds for JSON
+	writeJSON(w, http.StatusOK, map[string]any{
+		"tenant_id":        tenantID,
+		"user_id":          userID,
+		"period_start":     start,
+		"period_end":       end,
+		"total_events":     summary.TotalEvents,
+		"success_count":    summary.SuccessCount,
+		"error_count":      summary.ErrorCount,
+		"total_tokens_in":  summary.TotalTokensIn,
+		"total_tokens_out": summary.TotalTokensOut,
+		"total_duration_ms": summary.TotalDuration.Milliseconds(),
+		"avg_duration_ms":   summary.AvgDuration.Milliseconds(),
+		"tool_breakdown":    summary.ToolBreakdown,
+	})
+}
+
+func (s *Server) handleExportUsage(w http.ResponseWriter, r *http.Request) {
+	principal := s.requireAuth(w, r)
+	if principal == nil {
+		return
+	}
+
+	tenantID := principal.TenantID()
+	userID := principal.Subject
+
+	// Parse query params
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = "json"
+	}
+	if format != "json" && format != "csv" {
+		writeError(w, http.StatusBadRequest, "format must be 'json' or 'csv'")
+		return
+	}
+
+	startStr := r.URL.Query().Get("start")
+	endStr := r.URL.Query().Get("end")
+	limitStr := r.URL.Query().Get("limit")
+
+	var start, end time.Time
+	if startStr != "" {
+		var err error
+		start, err = time.Parse(time.RFC3339, startStr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid start time format")
+			return
+		}
+	}
+	if endStr != "" {
+		var err error
+		end, err = time.Parse(time.RFC3339, endStr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid end time format")
+			return
+		}
+	}
+
+	limit := 1000 // Default limit
+	if limitStr != "" {
+		var n int
+		for _, c := range limitStr {
+			if c >= '0' && c <= '9' {
+				n = n*10 + int(c-'0')
+			}
+		}
+		if n > 0 && n <= 10000 {
+			limit = n
+		}
+	}
+
+	params := usage.QueryParams{
+		TenantID:  tenantID,
+		UserID:    userID,
+		StartTime: start,
+		EndTime:   end,
+		Limit:     limit,
+	}
+
+	exporter := usage.NewExporter(s.usage)
+
+	// Set appropriate content type
+	if format == "csv" {
+		w.Header().Set("Content-Type", "text/csv")
+		w.Header().Set("Content-Disposition", "attachment; filename=usage.csv")
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+	}
+
+	var exportFormat usage.ExportFormat
+	if format == "csv" {
+		exportFormat = usage.FormatCSV
+	} else {
+		exportFormat = usage.FormatJSON
+	}
+
+	if err := exporter.Export(w, params, exportFormat); err != nil {
+		// Headers already sent, can't send error response
+		return
+	}
 }
