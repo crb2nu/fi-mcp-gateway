@@ -10,7 +10,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.7.3
-	gitlab.flexinfer.ai/libs/fi-mcp-kit v0.0.0
+	gitlab.flexinfer.ai/libs/fi-mcp-kit v0.1.0
 	gitlab.flexinfer.ai/libs/mcp-go v0.1.0
 )
 
@@ -28,5 +28,3 @@ require (
 	google.golang.org/protobuf v1.36.8 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace gitlab.flexinfer.ai/libs/fi-mcp-kit => ../../libs/fi-mcp-kit

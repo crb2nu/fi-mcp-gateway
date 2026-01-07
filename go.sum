@@ -49,6 +49,8 @@ github.com/rogpeppe/go-internal v1.10.0 h1:TMyTOH3F/DB16zRVcYyreMH6GnZZrwQVAoYjR
 github.com/rogpeppe/go-internal v1.10.0/go.mod h1:UQnix2H7Ngw/k4C5ijL5+65zddjncjaFoBhdsK/akog=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
+gitlab.flexinfer.ai/libs/fi-mcp-kit v0.1.0 h1:pnooKnfBNYOwGRZNaUSKFWRXqEjYh/96+HYCyLA0JKM=
+gitlab.flexinfer.ai/libs/fi-mcp-kit v0.1.0/go.mod h1:OEab0B34q4NXLfvffG5ZHaGFD2LeJKyxEK0DpRyWHSY=
 gitlab.flexinfer.ai/libs/mcp-go v0.1.0 h1:eOwcqEd5LBruJJUfaivw8BI+ethGdGchIDMZhdvjmBc=
 gitlab.flexinfer.ai/libs/mcp-go v0.1.0/go.mod h1:z0reAUcrenSatEjA7BTNAW8Ua7TjSTSxacc5ogfbl0M=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=

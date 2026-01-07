@@ -7,10 +7,15 @@ stages: [lint, test, build, deploy]
 
 variables:
   GO_VERSION: "1.24"
+  GOPRIVATE: "gitlab.flexinfer.ai/*"
+  GOFLAGS: "-buildvcs=false"
 
 # Override image since GitLab CI doesn't expand variables in image field from includes
 .go-image:
   image: golang:1.24
+  before_script:
+    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.flexinfer.ai/".insteadOf "https://gitlab.flexinfer.ai/"
+    - go mod download
 
 lint:gofmt:
   extends: [.go-base, .go-image]
