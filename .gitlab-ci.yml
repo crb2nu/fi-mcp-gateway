@@ -31,6 +31,8 @@ lint:vet:
 
 test:
   extends: [.go-test, .go-image]
+  variables:
+    CGO_ENABLED: "1"
 
 build:
   extends: [.go-build, .go-image]
