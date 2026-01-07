@@ -3,11 +3,11 @@ package usage
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/logger"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/storage"
 )
 
@@ -162,7 +162,9 @@ func (t *DefaultTracker) flush() {
 	defer cancel()
 
 	if err := t.store.Store(ctx, events); err != nil {
-		log.Printf("usage: failed to store %d events: %v", len(events), err)
+		logger.Error("failed to store usage events",
+			"error", err,
+			"event_count", len(events))
 		// TODO: Implement retry or dead-letter queue
 	}
 }

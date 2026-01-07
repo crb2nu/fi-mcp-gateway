@@ -3,10 +3,10 @@ package quota
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/billing"
+	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/logger"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/metrics"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/storage"
 )
@@ -93,7 +93,11 @@ func (m *DefaultManager) Check(ctx context.Context, tenantID, userID string, quo
 	// Get current usage
 	usage, err := m.store.GetUsage(ctx, tenantID, userID, quotaType, periodStart)
 	if err != nil {
-		log.Printf("quota: failed to get usage: %v", err)
+		logger.Error("quota usage lookup failed",
+			"error", err,
+			"tenant", tenantID,
+			"user", userID,
+			"type", string(quotaType))
 		// On error, allow but log
 		return CheckResult{Allowed: true}, nil
 	}
@@ -115,8 +119,12 @@ func (m *DefaultManager) Check(ctx context.Context, tenantID, userID string, quo
 	if quota.HasSoftLimit() && newUsage > quota.SoftLimit {
 		result.Warning = true
 		if m.cfg.EnforceSoft {
-			log.Printf("quota: soft limit warning tenant=%s user=%s type=%s usage=%d/%d",
-				tenantID, userID, quotaType, usage.Current, quota.SoftLimit)
+			logger.Warn("quota soft limit exceeded",
+				"tenant", tenantID,
+				"user", userID,
+				"type", string(quotaType),
+				"current", usage.Current,
+				"soft_limit", quota.SoftLimit)
 		}
 		// Send webhook for soft limit warning
 		m.sendWebhook(billing.EventQuotaWarning, tenantID, userID, map[string]any{
@@ -143,8 +151,12 @@ func (m *DefaultManager) Check(ctx context.Context, tenantID, userID string, quo
 			return result, ErrQuotaExceeded
 		}
 		// Log but don't block if enforcement is disabled
-		log.Printf("quota: hard limit exceeded (not enforced) tenant=%s user=%s type=%s usage=%d/%d",
-			tenantID, userID, quotaType, usage.Current, quota.Limit)
+		logger.Warn("quota hard limit exceeded (not enforced)",
+			"tenant", tenantID,
+			"user", userID,
+			"type", string(quotaType),
+			"current", usage.Current,
+			"limit", quota.Limit)
 		result.Allowed = true
 	}
 

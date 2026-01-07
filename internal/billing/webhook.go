@@ -12,12 +12,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/logger"
 )
 
 // EventType defines the type of billing event.
@@ -142,7 +143,10 @@ func (s *HTTPWebhookSender) Send(ctx context.Context, event Event) error {
 			return nil
 		}
 		lastErr = err
-		log.Printf("billing: webhook attempt %d failed: %v", attempt+1, err)
+		logger.Warn("billing webhook attempt failed",
+			"attempt", attempt+1,
+			"error", err,
+			"event_type", string(event.Type))
 	}
 
 	return fmt.Errorf("webhook failed after %d attempts: %w", s.cfg.MaxRetries+1, lastErr)
@@ -157,7 +161,9 @@ func (s *HTTPWebhookSender) SendAsync(event Event) {
 	select {
 	case s.eventsCh <- event:
 	default:
-		log.Printf("billing: webhook queue full, dropping event %s", event.Type)
+		logger.Warn("billing webhook queue full, dropping event",
+			"event_type", string(event.Type),
+			"event_id", event.ID)
 	}
 }
 
@@ -223,7 +229,9 @@ func (s *HTTPWebhookSender) worker() {
 				case event := <-s.eventsCh:
 					ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
 					if err := s.Send(ctx, event); err != nil {
-						log.Printf("billing: failed to send queued event: %v", err)
+						logger.Error("failed to send queued billing event",
+							"error", err,
+							"event_type", string(event.Type))
 					}
 					cancel()
 				default:
@@ -233,7 +241,10 @@ func (s *HTTPWebhookSender) worker() {
 		case event := <-s.eventsCh:
 			ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout*time.Duration(s.cfg.MaxRetries+1))
 			if err := s.Send(ctx, event); err != nil {
-				log.Printf("billing: async webhook failed: %v", err)
+				logger.Error("async billing webhook failed",
+					"error", err,
+					"event_type", string(event.Type),
+					"tenant", event.TenantID)
 			}
 			cancel()
 		}

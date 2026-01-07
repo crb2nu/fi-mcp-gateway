@@ -3,9 +3,9 @@ package ratelimit
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"github.com/redis/go-redis/v9"
+	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/logger"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/storage"
 )
 
@@ -88,7 +88,7 @@ func (l *HierarchicalLimiter) AllowN(ctx context.Context, key Key, n int) (Resul
 		result, err := l.store.Take(ctx, check.key, check.limit, n)
 		if err != nil {
 			// Log error but don't fail the request
-			log.Printf("ratelimit: store error for %s: %v", check.key, err)
+			logger.Error("rate limit store error", "error", err, "key", check.key)
 			continue
 		}
 

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -20,6 +20,7 @@ import (
 	"gitlab.flexinfer.ai/libs/fi-mcp-kit/pkg/registry"
 	"gitlab.flexinfer.ai/libs/mcp-go"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/auth"
+	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/logger"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/metrics"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/policy"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/quota"
@@ -433,7 +434,7 @@ func (s *session) Run(ctx context.Context) {
 		if s.gw.cfg.RateLimiter != nil {
 			allowed, retryAfter, err := s.gw.cfg.RateLimiter.CheckMessage(s.tenantID, user, route.toolName)
 			if err != nil {
-				log.Printf("ratelimit error: %v", err)
+				logger.Error("rate limit check failed", "error", err, "tenant", s.tenantID, "user", user)
 			}
 			if !allowed {
 				metrics.ErrorsTotal.WithLabelValues("ratelimit").Inc()
@@ -493,7 +494,7 @@ func (s *session) Run(ctx context.Context) {
 		// Increment quota for successful tool calls
 		if s.gw.cfg.QuotaManager != nil && route.method == "tools/call" {
 			if err := s.gw.cfg.QuotaManager.Increment(ctx, s.tenantID, user, quota.QuotaTypeToolCalls, 1); err != nil {
-				log.Printf("quota increment error: %v", err)
+				logger.Error("quota increment failed", "error", err, "tenant", s.tenantID, "user", user)
 			}
 		}
 
@@ -787,7 +788,11 @@ func (g *Gateway) trackSession(s *session) {
 	if s.tenantID != "" {
 		metrics.SessionsActiveByTenant.WithLabelValues(s.tenantID).Inc()
 	}
-	log.Printf("ws session open id=%s tenant=%s profile=%s server=%s", s.id, s.tenantID, s.profile, s.boundServer)
+	logger.Info("websocket session opened",
+		slog.String("session_id", s.id),
+		slog.String("tenant", s.tenantID),
+		slog.String("profile", s.profile),
+		slog.String("server", s.boundServer))
 }
 
 func (g *Gateway) untrackSession(id string) {
@@ -798,7 +803,7 @@ func (g *Gateway) untrackSession(id string) {
 	}
 	delete(g.sessions, id)
 	metrics.SessionsActive.Dec()
-	log.Printf("ws session closed id=%s", id)
+	logger.Info("websocket session closed", slog.String("session_id", id))
 }
 
 type backendTransport struct {
