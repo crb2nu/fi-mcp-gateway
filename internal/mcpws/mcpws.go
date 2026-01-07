@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -303,10 +304,27 @@ type session struct {
 }
 
 type backend struct {
-	server string
-	conn   *pool.Conn
-	tr     *backendTransport
-	done   chan struct{}
+	server       string
+	conn         *pool.Conn
+	tr           *backendTransport
+	done         chan struct{}
+	lastUsedNano atomic.Int64 // atomic for race-safe access
+}
+
+func (b *backend) touch() {
+	b.lastUsedNano.Store(time.Now().UnixNano())
+}
+
+func (b *backend) lastUsed() time.Time {
+	return time.Unix(0, b.lastUsedNano.Load())
+}
+
+// syncLastUsed copies the atomic lastUsed to pool.Conn for pool internal use.
+// Must be called under appropriate lock before returning conn to pool.
+func (b *backend) syncLastUsed() {
+	if b.conn != nil {
+		b.conn.LastUsed = b.lastUsed()
+	}
 }
 
 type jsonrpcEnvelope struct {
@@ -443,7 +461,7 @@ func (s *session) Run(ctx context.Context) {
 			continue
 		}
 
-		b.conn.LastUsed = time.Now()
+		b.touch()
 		if err := b.tr.WriteMessage(msgType, msg); err != nil {
 			s.dropBackend(route.serverName, true)
 			s.sendJSONRPCError(msg, "backend write failed")
@@ -481,7 +499,7 @@ func (s *session) reapBackendsLoop(ctx context.Context) {
 			if b == nil || b.conn == nil {
 				continue
 			}
-			if now.Sub(b.conn.LastUsed) > idleTimeout {
+			if now.Sub(b.lastUsed()) > idleTimeout {
 				toDrop = append(toDrop, name)
 			}
 		}
@@ -580,6 +598,7 @@ func (s *session) getBackend(ctx context.Context, serverName string) (*backend, 
 
 	if toDrop != nil && toDrop.conn != nil {
 		toDrop.conn.Healthy = false
+		toDrop.syncLastUsed()
 		_ = toDrop.tr.Close()
 		s.pool.Put(toDrop.conn)
 	}
@@ -602,6 +621,7 @@ func (s *session) getBackend(ctx context.Context, serverName string) (*backend, 
 		tr:     tr,
 		done:   make(chan struct{}),
 	}
+	b.touch() // Initialize lastUsedNano
 
 	s.backendsMu.Lock()
 	if prev := s.backends[serverName]; prev != nil {
@@ -631,6 +651,7 @@ func (s *session) dropBackend(serverName string, unhealthy bool) {
 	if unhealthy {
 		b.conn.Healthy = false
 	}
+	b.syncLastUsed()
 	_ = b.tr.Close()
 	s.pool.Put(b.conn)
 }
@@ -652,9 +673,7 @@ func (s *session) pumpBackendToClient(ctx context.Context, b *backend) {
 			return
 		}
 
-		if b.conn != nil {
-			b.conn.LastUsed = time.Now()
-		}
+		b.touch()
 		if err := s.writeToClient(msgType, msg); err != nil {
 			return
 		}
