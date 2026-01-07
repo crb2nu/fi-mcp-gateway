@@ -90,4 +90,31 @@ var (
 		Name: "mcp_gateway_apikey_auth_failed_total",
 		Help: "Total number of failed API key authentication attempts",
 	}, []string{"tenant", "reason"})
+
+	// Usage tracking metrics
+	UsageEventsStoredTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "mcp_gateway_usage_events_stored_total",
+		Help: "Total number of usage events successfully stored",
+	})
+
+	UsageEventsFailedTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "mcp_gateway_usage_events_failed_total",
+		Help: "Total number of usage events that failed to store",
+	})
+
+	UsageEventsRetriedTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "mcp_gateway_usage_events_retried_total",
+		Help: "Total number of usage event store retry attempts",
+	})
+
+	UsageEventsDLQTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "mcp_gateway_usage_events_dlq_total",
+		Help: "Total number of usage events sent to dead-letter queue",
+	})
+
+	UsageFlushDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "mcp_gateway_usage_flush_duration_seconds",
+		Help:    "Time taken to flush usage events to storage",
+		Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
+	})
 )

@@ -13,6 +13,7 @@ import (
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/mcpws"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/policy"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/quota"
+	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/ratelimit"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/usage"
 )
 
@@ -23,6 +24,7 @@ type Server struct {
 	apikeys       apikeys.Manager
 	quotas        quota.Manager
 	usage         usage.Tracker
+	httpLimiter   ratelimit.Limiter
 }
 
 type Config struct {
@@ -30,6 +32,7 @@ type Config struct {
 	Authenticator auth.Authenticator
 	Policy        policy.Policy
 	RateLimiter   mcpws.RateLimiter
+	HTTPLimiter   ratelimit.Limiter // Optional rate limiter for HTTP API
 	APIKeys       apikeys.Manager
 	Quotas        quota.Manager
 	Usage         usage.Tracker
@@ -42,6 +45,7 @@ func New(cfg Config) *Server {
 		apikeys:       cfg.APIKeys,
 		quotas:        cfg.Quotas,
 		usage:         cfg.Usage,
+		httpLimiter:   cfg.HTTPLimiter,
 		ws: mcpws.New(mcpws.Config{
 			Registry:      cfg.Registry,
 			Authenticator: cfg.Authenticator,
@@ -56,6 +60,7 @@ func New(cfg Config) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
+	// Health and readiness endpoints (no rate limiting)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":    "ok",
@@ -75,7 +80,13 @@ func (s *Server) Handler() http.Handler {
 		})
 	})
 
-	mux.HandleFunc("GET /api/servers", func(w http.ResponseWriter, r *http.Request) {
+	// Metrics endpoint (no rate limiting)
+	mux.Handle("/metrics", promhttp.Handler())
+
+	// Build API mux (these get rate limited)
+	apiMux := http.NewServeMux()
+
+	apiMux.HandleFunc("GET /api/servers", func(w http.ResponseWriter, r *http.Request) {
 		type item struct {
 			Name        string   `json:"name"`
 			Categories  []string `json:"categories"`
@@ -103,29 +114,36 @@ func (s *Server) Handler() http.Handler {
 
 	// API Key management endpoints
 	if s.apikeys != nil {
-		mux.HandleFunc("POST /api/v1/keys", s.handleCreateKey)
-		mux.HandleFunc("GET /api/v1/keys", s.handleListKeys)
-		mux.HandleFunc("GET /api/v1/keys/{id}", s.handleGetKey)
-		mux.HandleFunc("DELETE /api/v1/keys/{id}", s.handleRevokeKey)
-		mux.HandleFunc("POST /api/v1/keys/{id}/rotate", s.handleRotateKey)
+		apiMux.HandleFunc("POST /api/v1/keys", s.handleCreateKey)
+		apiMux.HandleFunc("GET /api/v1/keys", s.handleListKeys)
+		apiMux.HandleFunc("GET /api/v1/keys/{id}", s.handleGetKey)
+		apiMux.HandleFunc("DELETE /api/v1/keys/{id}", s.handleRevokeKey)
+		apiMux.HandleFunc("POST /api/v1/keys/{id}/rotate", s.handleRotateKey)
 	}
 
 	// Quota status endpoint
 	if s.quotas != nil {
-		mux.HandleFunc("GET /api/v1/quotas", s.handleGetQuotas)
+		apiMux.HandleFunc("GET /api/v1/quotas", s.handleGetQuotas)
 	}
 
 	// Usage analytics endpoints
 	if s.usage != nil {
-		mux.HandleFunc("GET /api/v1/usage", s.handleGetUsage)
-		mux.HandleFunc("GET /api/v1/usage/export", s.handleExportUsage)
+		apiMux.HandleFunc("GET /api/v1/usage", s.handleGetUsage)
+		apiMux.HandleFunc("GET /api/v1/usage/export", s.handleExportUsage)
 	}
 
-	// WebSocket MCP gateway (server-bound, v0).
-	mux.HandleFunc("/ws", s.ws.HandleWS)
+	// Apply rate limiting middleware to API routes
+	var apiHandler http.Handler = apiMux
+	if s.httpLimiter != nil {
+		rateLimitMiddleware := ratelimit.NewMiddleware(s.httpLimiter, nil)
+		apiHandler = rateLimitMiddleware.Handler(apiMux)
+	}
 
-	// Metrics endpoint.
-	mux.Handle("/metrics", promhttp.Handler())
+	// Mount rate-limited API handler
+	mux.Handle("/api/", apiHandler)
+
+	// WebSocket MCP gateway (has its own rate limiting).
+	mux.HandleFunc("/ws", s.ws.HandleWS)
 
 	return mux
 }

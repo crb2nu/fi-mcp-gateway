@@ -72,6 +72,12 @@ type Config struct {
 	WebhookURL string
 	// WebhookSecret is used for signing webhook payloads
 	WebhookSecret string
+	// MaxRetries is the maximum number of retry attempts for failed flushes
+	MaxRetries int
+	// RetryDelay is the initial delay between retries (doubles each attempt)
+	RetryDelay time.Duration
+	// DLQPath is the file path for the dead-letter queue (failed events)
+	DLQPath string
 }
 
 // LoadConfigFromEnv loads usage configuration from environment variables.
@@ -85,6 +91,9 @@ func LoadConfigFromEnv() Config {
 		RetentionDays: envIntDefault("FI_MCP_USAGE_RETENTION_DAYS", 90),
 		WebhookURL:    os.Getenv("FI_MCP_BILLING_WEBHOOK_URL"),
 		WebhookSecret: os.Getenv("FI_MCP_BILLING_WEBHOOK_SECRET"),
+		MaxRetries:    envIntDefault("FI_MCP_USAGE_MAX_RETRIES", 3),
+		RetryDelay:    envDurationDefault("FI_MCP_USAGE_RETRY_DELAY", 1*time.Second),
+		DLQPath:       envDefault("FI_MCP_USAGE_DLQ_PATH", "/tmp/fi-mcp-usage-dlq.jsonl"),
 	}
 }
 
