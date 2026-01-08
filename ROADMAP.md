@@ -10,14 +10,15 @@ Bootstrap in progress:
 - Connection pooling & idle reaping ✅
 - Auth & Policy hooks ✅
 - Prometheus Metrics (`/metrics`) ✅
+- Context Injection (User/Tenant headers) ✅
+- K8s Probes (/health, /ready) ✅
 
 ## Remaining Gaps
 
 | Feature | Description | Status |
 |---------|-------------|--------|
-| K8s Probes | Liveness/Readiness probes in deployment manifests | Pending |
-| Context Injection | Inject user context into backend requests | Pending |
 | Smart Routing | Content-based routing beyond tool name | Pending |
+| Hub Transport | Route requests to remote hub servers | Pending |
 
 ## References
 

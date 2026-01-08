@@ -192,7 +192,7 @@ func (g *Gateway) serverExistsAndHubDeployable(serverName string) bool {
 	return false
 }
 
-func (g *Gateway) dialBackend(ctx context.Context, serverName string) (*websocket.Conn, error) {
+func (g *Gateway) dialBackend(ctx context.Context, serverName string, headers http.Header) (*websocket.Conn, error) {
 	host, err := formatBackendHost(g.cfg.ServerHostTemplate, serverName, g.cfg.HubNamespace)
 	if err != nil {
 		return nil, err
@@ -210,7 +210,7 @@ func (g *Gateway) dialBackend(ctx context.Context, serverName string) (*websocke
 	}
 
 	start := time.Now()
-	conn, _, err := dialer.DialContext(ctx, url, nil)
+	conn, _, err := dialer.DialContext(ctx, url, headers)
 	metrics.BackendDialDuration.Observe(time.Since(start).Seconds())
 	if err != nil {
 		metrics.ErrorsTotal.WithLabelValues("backend_dial").Inc()
@@ -219,8 +219,8 @@ func (g *Gateway) dialBackend(ctx context.Context, serverName string) (*websocke
 	return conn, nil
 }
 
-func (g *Gateway) dialBackendTransport(ctx context.Context, serverName string) (mcp.Transport, error) {
-	ws, err := g.dialBackend(ctx, serverName)
+func (g *Gateway) dialBackendTransport(ctx context.Context, serverName string, headers http.Header) (mcp.Transport, error) {
+	ws, err := g.dialBackend(ctx, serverName, headers)
 	if err != nil {
 		return nil, err
 	}
@@ -350,6 +350,20 @@ func newSession(gw *Gateway, principal *auth.Principal, profile, server string, 
 		tenantID = principal.TenantID()
 	}
 
+	// Prepare headers for backend connections
+	headers := http.Header{}
+	if tenantID != "" {
+		headers.Set("X-Tenant-ID", tenantID)
+	}
+	if principal != nil && principal.Subject != "" {
+		headers.Set("X-User-ID", principal.Subject)
+	}
+
+	// Closure to capture headers for pool dialing
+	dialFunc := func(ctx context.Context, serverName string) (mcp.Transport, error) {
+		return gw.dialBackendTransport(ctx, serverName, headers)
+	}
+
 	return &session{
 		gw:          gw,
 		id:          fmt.Sprintf("sess-%d", time.Now().UnixNano()),
@@ -365,7 +379,7 @@ func newSession(gw *Gateway, principal *auth.Principal, profile, server string, 
 			MaxIdle:     gw.cfg.BackendMaxIdle,
 			MaxOpen:     gw.cfg.BackendMaxOpen,
 			IdleTimeout: gw.cfg.BackendIdleTimeout,
-			DialFunc:    gw.dialBackendTransport,
+			DialFunc:    dialFunc,
 		}),
 	}
 }
