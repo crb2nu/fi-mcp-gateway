@@ -398,8 +398,8 @@ func TestRouteByToolName_Prefix(t *testing.T) {
 	}
 	gw := New(Config{Registry: reg})
 
-	if got := gw.routeByToolName("common", "k8s__getPods"); got != "k8s" {
-		t.Fatalf("routeByToolName: got %q, want %q", got, "k8s")
+	if got, _ := gw.ResolveServer("common", "k8s__getPods", nil); got != "k8s" {
+		t.Fatalf("ResolveServer: got %q, want %q", got, "k8s")
 	}
 }
 
@@ -419,8 +419,8 @@ func TestRouteByToolName_AlwaysAllow(t *testing.T) {
 	}
 	gw := New(Config{Registry: reg})
 
-	if got := gw.routeByToolName("common", "ping"); got != "test" {
-		t.Fatalf("routeByToolName: got %q, want %q", got, "test")
+	if got, _ := gw.ResolveServer("common", "ping", nil); got != "test" {
+		t.Fatalf("ResolveServer: got %q, want %q", got, "test")
 	}
 }
 
@@ -462,7 +462,7 @@ func TestResolveServer_GlobalIndex(t *testing.T) {
 	gw := New(Config{Registry: reg})
 
 	// Test unique tool routing
-	srv, err := gw.ResolveServer("common", "unique_tool")
+	srv, err := gw.ResolveServer("common", "unique_tool", nil)
 	if err != nil {
 		t.Fatalf("ResolveServer unique_tool failed: %v", err)
 	}
@@ -471,7 +471,7 @@ func TestResolveServer_GlobalIndex(t *testing.T) {
 	}
 
 	// Test ambiguous tool routing
-	_, err = gw.ResolveServer("common", "shared_tool")
+	_, err = gw.ResolveServer("common", "shared_tool", nil)
 	if err == nil {
 		t.Fatal("expected error for ambiguous tool")
 	}
@@ -480,12 +480,63 @@ func TestResolveServer_GlobalIndex(t *testing.T) {
 	}
 
 	// Test unknown tool
-	srv, err = gw.ResolveServer("common", "unknown_tool")
+	srv, err = gw.ResolveServer("common", "unknown_tool", nil)
 	if err != nil {
 		t.Fatalf("unexpected error for unknown tool: %v", err)
 	}
 	if srv != "" {
 		t.Errorf("expected empty string for unknown tool, got %q", srv)
+	}
+}
+
+func TestResolveServer_ArgumentRouting(t *testing.T) {
+	t.Parallel()
+
+	reg := &registry.Registry{
+		Servers: []*registry.Server{
+			{Name: "fs-ssd", Categories: []string{"hub"}},
+			{Name: "fs-hdd", Categories: []string{"hub"}},
+		},
+		Routing: []*registry.RoutingRule{
+			{
+				ToolName: "read_file",
+				Argument: "path",
+				Cases: []registry.RoutingCase{
+					{Match: "/ssd/*", Server: "fs-ssd"},
+					{Match: "/hdd/*", Server: "fs-hdd"},
+				},
+				Default: "fs-hdd",
+			},
+		},
+	}
+
+	gw := New(Config{Registry: reg})
+
+	// Test SSD route
+	srv, err := gw.ResolveServer("common", "read_file", map[string]any{"path": "/ssd/data.txt"})
+	if err != nil {
+		t.Fatalf("SSD route failed: %v", err)
+	}
+	if srv != "fs-ssd" {
+		t.Errorf("expected fs-ssd, got %q", srv)
+	}
+
+	// Test HDD route
+	srv, err = gw.ResolveServer("common", "read_file", map[string]any{"path": "/hdd/logs.txt"})
+	if err != nil {
+		t.Fatalf("HDD route failed: %v", err)
+	}
+	if srv != "fs-hdd" {
+		t.Errorf("expected fs-hdd, got %q", srv)
+	}
+
+	// Test Default route
+	srv, err = gw.ResolveServer("common", "read_file", map[string]any{"path": "/other/file.txt"})
+	if err != nil {
+		t.Fatalf("Default route failed: %v", err)
+	}
+	if srv != "fs-hdd" {
+		t.Errorf("expected fs-hdd (default), got %q", srv)
 	}
 }
 

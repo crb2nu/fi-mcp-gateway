@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  labels:
+    app: fi-mcp-gateway
+    component: mcp-gateway
+  name: fi-mcp-gateway
+  namespace: mcp-hub
+spec:
+  rules:
+    - host: mcp.flexinfer.ai
+      http:
+        paths:
+          - backend:
+              service:
+                name: fi-mcp-gateway
+                port:
+                  number: 80
+            path: /
+            pathType: Prefix

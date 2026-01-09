@@ -11,7 +11,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.7.3
 	gitlab.flexinfer.ai/libs/fi-mcp-kit v0.1.0
-	gitlab.flexinfer.ai/libs/mcp-go v0.1.0
+	gitlab.flexinfer.ai/libs/mcp-go v0.2.0
 )
 
 require (
@@ -24,7 +24,11 @@ require (
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
-	golang.org/x/sys v0.35.0 // indirect
+	golang.org/x/sys v0.39.0 // indirect
 	google.golang.org/protobuf v1.36.8 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace gitlab.flexinfer.ai/libs/fi-mcp-kit => ../../libs/fi-mcp-kit
+
+replace gitlab.flexinfer.ai/libs/mcp-go => ../../libs/mcp-go

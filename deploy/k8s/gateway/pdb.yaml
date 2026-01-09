@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    app: fi-mcp-gateway
+    component: mcp-gateway
+  name: fi-mcp-gateway
+  namespace: mcp-hub
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: fi-mcp-gateway

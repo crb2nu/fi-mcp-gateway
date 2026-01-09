@@ -1,0 +1,733 @@
+apiVersion: v1
+data:
+  registry.yaml: |
+    version: 1
+    servers:
+        - name: tavily
+          categories:
+            - search
+            - docs
+          common:
+            description: AI-powered web search and content extraction (Go native)
+            command: ${repo}/services/loom-core/bin/mcp-tavily
+            env:
+                TAVILY_API_KEY: ${env:TAVILY_API_KEY}
+            hint: Use for real-time web search and information gathering
+            timeout: 60
+            always_allow:
+                - search
+                - search_news
+                - extract
+                - search_context
+          targets:
+            codex:
+                env:
+                    TAVILY_API_KEY: ${secret:TAVILY_API_KEY}
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-tavily
+                env:
+                    TAVILY_API_KEY: ${env:TAVILY_API_KEY}
+                type: stdio
+        - name: context7
+          categories:
+            - docs
+          common:
+            description: Library documentation retrieval
+            command: python3
+            args:
+                - scripts/mcp/run_cached_node_server.py
+                - context7
+            env:
+                CONTEXT7_MAX_TOKENS: "20000"
+                LOG_LEVEL: info
+                MCP_TIMEOUT: "90"
+            hint: Use for retrieving library documentation and code snippets
+            timeout: 90
+            always_allow:
+                - resolve-library-id
+                - get-library-docs
+          targets:
+            kilocode:
+                command: npx
+                args:
+                    - -y
+                    - '@upstash/context7-mcp@1.0.26'
+            vscode:
+                command: npx
+                args:
+                    - -y
+                    - '@upstash/context7-mcp@1.0.26'
+                env:
+                    CONTEXT7_MAX_TOKENS: "20000"
+                    LOG_LEVEL: info
+                type: stdio
+        - name: github
+          categories:
+            - devops
+            - scm
+          common:
+            description: GitHub repository operations and management (Go native)
+            command: ${repo}/services/loom-core/bin/mcp-github
+            env:
+                GITHUB_TOKEN: ${env:GITHUB_PERSONAL_ACCESS_TOKEN}
+            hint: Use for GitHub API operations, repository management, and PR automation
+            timeout: 60
+            always_allow:
+                - list_repos
+                - get_repo
+                - list_issues
+                - get_issue
+                - create_issue
+                - list_prs
+                - get_pr
+                - list_commits
+                - search_repos
+                - search_code
+                - get_file_contents
+          targets:
+            codex:
+                env:
+                    GITHUB_TOKEN: ${keychain:GITHUB_PERSONAL_ACCESS_TOKEN}
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-github
+                env:
+                    GITHUB_TOKEN: ${env:GITHUB_PERSONAL_ACCESS_TOKEN}
+                type: stdio
+        - name: gitlab
+          categories:
+            - devops
+            - scm
+          common:
+            description: GitLab repository operations and management (Go native)
+            command: ${repo}/services/loom-core/bin/mcp-gitlab
+            env:
+                GITLAB_API_URL: ${env:GITLAB_API_URL:-https://gitlab.flexinfer.ai/api/v4}
+                GITLAB_PERSONAL_ACCESS_TOKEN: ${env:GITLAB_PERSONAL_ACCESS_TOKEN}
+            hint: Use for GitLab API operations (issues, MRs, repo content); defaults to the self-hosted API URL.
+            timeout: 60
+            always_allow:
+                - create_or_update_file
+                - push_files
+                - search_repositories
+                - create_repository
+                - get_file_contents
+                - create_issue
+                - list_issues
+                - create_merge_request
+                - list_merge_requests
+                - fork_repository
+                - create_branch
+                - get_project
+                - list_projects
+          targets:
+            codex:
+                env:
+                    GITLAB_API_URL: ${env:GITLAB_API_URL:-https://gitlab.flexinfer.ai/api/v4}
+                    GITLAB_PERSONAL_ACCESS_TOKEN: ${keychain:GITLAB_PERSONAL_ACCESS_TOKEN}
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-gitlab
+                env:
+                    GITLAB_API_URL: ${env:GITLAB_API_URL:-https://gitlab.flexinfer.ai/api/v4}
+                    GITLAB_PERSONAL_ACCESS_TOKEN: ${env:GITLAB_PERSONAL_ACCESS_TOKEN}
+                type: stdio
+        - name: cloudflare
+          categories:
+            - networking
+            - operations
+          common:
+            description: Cloudflare API utilities (token verify, zones, tunnels)
+            command: ${repo}/services/loom-core/bin/mcp-cloudflare
+            env:
+                CF_ACCOUNT_ID: ${env:CF_ACCOUNT_ID}
+                CF_API_TOKEN: ${env:CF_API_TOKEN}
+                LOG_LEVEL: info
+            hint: Use to validate tokens, list DNS zones, and inspect Zero Trust tunnels
+            timeout: 60
+            always_allow:
+                - cf_verify_token
+                - cf_list_zones
+                - cf_list_tunnels
+          targets:
+            codex:
+                env:
+                    CF_ACCOUNT_ID: ${env:CF_ACCOUNT_ID}
+                    CF_API_TOKEN: ${keychain:CF_API_TOKEN}
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-cloudflare
+                type: stdio
+        - name: k8s_apps_k3s
+          categories:
+            - kubernetes
+            - operations
+          common:
+            description: Kubernetes operations for the k3s apps cluster (use for app deploys, logs, rollouts)
+            command: ${repo}/services/loom-core/bin/mcp-k8s-ops
+            env:
+                CONTEXT_BROKER_HOST: 127.0.0.1
+                CONTEXT_BROKER_PORT: "9876"
+                CONTEXT_BROKER_PUBLISH: "1"
+                KUBECONFIG: ${env:K3S_KUBECONFIG:-${HOME}/workspace/platform/gitops/.kube/k3s.yaml}
+                KUBECONTEXT: default
+                MCP_K8S_DEBUG: ""
+            hint: Use k8s_apps_k3s__* tools for workloads running on k3s
+            timeout: 90
+            always_allow:
+                - k8s.apply
+                - k8s.get
+                - k8s.getPods
+                - k8s.logs
+                - k8s.describe
+                - k8s.exec
+                - k8s.listNamespaces
+                - k8s.listContexts
+          targets:
+            kilocode:
+                env:
+                    K8S_OPERATION_TIMEOUT: "120"
+                    MCP_K8S_DEBUG: "1"
+                timeout: 120
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-k8s-ops
+                env:
+                    CONTEXT_BROKER_HOST: 127.0.0.1
+                    CONTEXT_BROKER_PORT: "9876"
+                    CONTEXT_BROKER_PUBLISH: "1"
+                    K8S_OPERATION_TIMEOUT: "120"
+                    KUBECONFIG: ${env:K3S_KUBECONFIG:-${HOME}/workspace/platform/gitops/.kube/k3s.yaml}
+                    KUBECONTEXT: default
+                    MCP_K8S_DEBUG: "1"
+                timeout: 120
+                type: stdio
+        - name: longhorn_k3s
+          categories:
+            - storage
+            - kubernetes
+            - operations
+          common:
+            description: Longhorn storage operations on the k3s cluster (volumes, replicas, attachments)
+            command: ${repo}/services/loom-core/bin/mcp-k8s-ops
+            env:
+                CONTEXT_BROKER_HOST: 127.0.0.1
+                CONTEXT_BROKER_PORT: "9876"
+                CONTEXT_BROKER_PUBLISH: "1"
+                KUBECONFIG: ${env:K3S_KUBECONFIG:-${HOME}/workspace/platform/gitops/.kube/k3s.yaml}
+                LOG_LEVEL: info
+            hint: Target the longhorn-system namespace; use k8s.get/k8s.describe on Volume, Replica, Node CRDs and inspect events to debug attachments.
+            timeout: 90
+            always_allow:
+                - k8s.get
+                - k8s.describe
+                - k8s.getPods
+                - k8s.logs
+                - k8s.apply
+          targets:
+            codex:
+                env:
+                    MCP_K8S_DEBUG: "1"
+            kilocode:
+                env:
+                    MCP_K8S_DEBUG: "1"
+        - name: k8s_harvester_infra
+          categories:
+            - kubernetes
+            - operations
+          common:
+            description: Kubernetes operations for the Harvester (RKE2) management cluster (Go native)
+            command: ${repo}/services/loom-core/bin/mcp-k8s-ops
+            env:
+                KUBECONFIG: ${env:RKE2_KUBECONFIG:-${HOME}/workspace/platform/gitops/.kube/harvester-admin.yaml}
+            hint: Use k8s_harvester_infra__* tools for Harvester/infra operations
+            timeout: 90
+            always_allow:
+                - k8s.get
+                - k8s.getPods
+                - k8s.logs
+                - k8s.exec
+                - k8s.describe
+                - k8s.listNamespaces
+                - k8s.apply
+                - k8s.listContexts
+          targets:
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-k8s-ops
+                env:
+                    KUBECONFIG: ${env:RKE2_KUBECONFIG:-${HOME}/workspace/platform/gitops/.kube/harvester-admin.yaml}
+                type: stdio
+        - name: ops_mcp
+          categories:
+            - operations
+            - automation
+          common:
+            description: Ops MCP server for k3s and Harvester operations (repair, VIP labels, VM lifecycle, scripted ops)
+            command: ${repo}/services/loom-core/bin/mcp-ops
+            env:
+                CONTEXT_BROKER_HOST: 127.0.0.1
+                CONTEXT_BROKER_PORT: "9876"
+                CONTEXT_BROKER_PUBLISH: "1"
+                K3S_KUBECONFIG: ${env:K3S_KUBECONFIG:-${HOME}/workspace/platform/gitops/.kube/k3s.yaml}
+                LOG_LEVEL: info
+                RKE2_KUBECONFIG: ${env:RKE2_KUBECONFIG:-${HOME}/workspace/platform/gitops/.kube/harvester-admin.yaml}
+                SSH_KEY: ${HOME}/.ssh/id_ed25519
+            hint: Use for cluster repair, VM management, and operational tasks
+            timeout: 120
+            always_allow:
+                - k8s_get_nodes
+                - k8s_scale_deploy
+                - k8s_delete_pods_by_phase
+                - vip_label_node
+                - harvester_vms_list
+                - harvester_vm_restart
+                - k3s_service_logs
+                - k3s_repair_server
+                - stabilize_cluster
+                - run_repo_script
+          targets:
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-ops
+                env:
+                    CONTEXT_BROKER_HOST: 127.0.0.1
+                    CONTEXT_BROKER_PORT: "9876"
+                    CONTEXT_BROKER_PUBLISH: "1"
+                    K3S_KUBECONFIG: ${env:K3S_KUBECONFIG:-${HOME}/workspace/platform/gitops/.kube/k3s.yaml}
+                    LOG_LEVEL: info
+                    RKE2_KUBECONFIG: ${env:RKE2_KUBECONFIG:-${HOME}/workspace/platform/gitops/.kube/harvester-admin.yaml}
+                    SSH_KEY: ${HOME}/.ssh/id_ed25519
+                timeout: 120
+                type: stdio
+        - name: server_mgmt
+          categories:
+            - operations
+            - ssh
+          common:
+            description: SSH-based server management for system administration
+            command: ${repo}/services/loom-core/bin/mcp-server-mgmt
+            env:
+                CONTEXT_BROKER_HOST: 127.0.0.1
+                CONTEXT_BROKER_PORT: "9876"
+                CONTEXT_BROKER_PUBLISH: "1"
+                LOG_LEVEL: info
+            hint: Use for server maintenance, package management, and system diagnostics
+            timeout: 90
+            always_allow:
+                - server_listHosts
+                - server_getHost
+                - server_detectOS
+                - server_updateSystem
+                - server_installPackages
+                - server_removePackages
+                - server_serviceStatus
+                - server_restartService
+                - server_enableService
+                - server_disableService
+                - server_logs
+                - server_diagnose
+                - server_execSafe
+                - server_sshCommand
+                - server_reboot
+                - server_batch
+                - server_batchByTag
+                - server_configureAutoUpdates
+                - server_networkRouteInspect
+                - server_sysctlSet
+                - server_setSendRedirects
+                - server_setRpFilter
+          targets:
+            kilocode:
+                env:
+                    DEFAULT_SSH_USER: admin
+                    LOG_LEVEL: debug
+                    SSH_KEY_PATH: ${HOME}/.ssh/id_rsa
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-server-mgmt
+                env:
+                    CONTEXT_BROKER_HOST: 127.0.0.1
+                    CONTEXT_BROKER_PORT: "9876"
+                    CONTEXT_BROKER_PUBLISH: "1"
+                    LOG_LEVEL: info
+                type: stdio
+        - name: asus_router
+          categories:
+            - network
+            - router
+          common:
+            description: Manage ASUS router via SSH alias (asus-router in ~/.ssh/config)
+            command: ${repo}/services/loom-core/bin/mcp-asus-router
+            env:
+                ASUS_ROUTER_HOST: asus-router
+                ASUS_ROUTER_PORT: "2222"
+                ASUS_ROUTER_USER: admin
+            hint: Use for router status/log tails, nvram inspection, and safe maintenance actions
+            timeout: 30
+        - name: sequentialthinking
+          categories:
+            - reasoning
+            - planning
+          common:
+            description: Dynamic and reflective problem-solving through sequential thoughts
+            command: ${repo}/services/loom-core/bin/mcp-sequentialthinking
+            hint: Use for complex problem breakdown and multi-step analysis
+            timeout: 60
+            always_allow:
+                - start_thinking
+                - add_thought
+                - get_chain
+                - list_chains
+                - set_active_chain
+                - complete_chain
+                - branch_thought
+                - delete_chain
+                - summarize_chain
+          targets:
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-sequentialthinking
+                type: stdio
+        - name: time
+          categories:
+            - utilities
+          common:
+            description: Timezone conversion and time operations
+            command: ${repo}/services/loom-core/bin/mcp-time
+            hint: Use for getting current time and converting between timezones
+            timeout: 30
+          targets:
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-time
+                type: stdio
+        - name: git
+          categories:
+            - devops
+            - scm
+          common:
+            description: Local Git repository operations (Go native)
+            command: ${repo}/services/loom-core/bin/mcp-git
+            env:
+                GIT_REPO_PATH: ${repo}
+            hint: Use for Git operations within this repo; read-only tools are auto-approved
+            timeout: 60
+            always_allow:
+                - git_status
+                - git_diff
+                - git_log
+                - git_show
+                - git_branch
+          targets:
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-git
+                env:
+                    GIT_REPO_PATH: ${repo}
+                type: stdio
+        - name: git_worktree
+          categories:
+            - devops
+            - scm
+          common:
+            description: Manage git worktrees for parallel agent work (list/add/remove/prune)
+            command: ${repo}/services/loom-core/bin/mcp-git-worktree
+            env:
+                LOG_LEVEL: info
+                REPO_PATH: ${repo}
+            hint: Use to create isolated worktrees per agent; paths must stay inside the repo
+            timeout: 60
+            always_allow:
+                - git_worktree_list
+                - git_worktree_add
+                - git_worktree_remove
+                - git_worktree_prune
+          targets:
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-git-worktree
+                type: stdio
+        - name: memory
+          categories:
+            - memory
+            - knowledge
+          common:
+            description: Knowledge graph memory for persistent context (Go native)
+            command: ${repo}/services/loom-core/bin/mcp-memory
+            env:
+                MEMORY_AUTO_SAVE: "true"
+                MEMORY_PERSIST_PATH: ${HOME}/.config/loom/memory_graph.json
+            hint: Use for storing and retrieving entity relationships and observations
+            timeout: 60
+            always_allow:
+                - create_entities
+                - create_relations
+                - add_observations
+                - delete_entities
+                - delete_observations
+                - delete_relations
+                - read_graph
+                - search_nodes
+                - open_nodes
+          targets:
+            codex:
+                env:
+                    MEMORY_PERSIST_PATH: ${HOME}/.codex/memory_graph.json
+            kilocode:
+                env:
+                    MEMORY_PERSIST_PATH: ${HOME}/.kilocode/memory_graph.json
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-memory
+                env:
+                    MEMORY_AUTO_SAVE: "true"
+                    MEMORY_PERSIST_PATH: ${HOME}/.config/loom/memory_graph.json
+                type: stdio
+        - name: zep
+          categories:
+            - memory
+          common:
+            description: Zep Cloud memory (sessions/messages) via MCP (Go native)
+            command: ${repo}/services/loom-core/bin/mcp-zep
+            env:
+                ZEP_API_KEY: ${keychain:ZEP_API_KEY}
+                ZEP_API_URL: ${env:ZEP_API_URL:-https://api.getzep.com}
+            hint: Use to append and retrieve chat memories across sessions
+            timeout: 60
+            always_allow:
+                - zep_health
+                - zep_add_messages
+                - zep_get_messages
+          targets:
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-zep
+                env:
+                    ZEP_API_KEY: ${env:ZEP_API_KEY}
+                    ZEP_API_URL: ${env:ZEP_API_URL:-https://api.getzep.com}
+                type: stdio
+        - name: youtube
+          categories:
+            - media
+            - documentation
+          common:
+            description: Download and process YouTube subtitles (Go native)
+            command: ${repo}/services/loom-core/bin/mcp-youtube
+            hint: Use for extracting YouTube video transcripts
+            timeout: 60
+            always_allow:
+                - get_transcript
+                - get_video_info
+          targets:
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-youtube
+                type: stdio
+        - name: godot_debug
+          categories:
+            - game
+            - debugging
+            - local
+          common:
+            description: Local-only MCP server for Godot debugging (Go native)
+            command: ${repo}/services/loom-core/bin/mcp-godot
+            env:
+                GODOT_HOST: 127.0.0.1
+                GODOT_LOG_PATH: ${env:GODOT_LOG_PATH:-~/Library/Application Support/Godot/app_userdata/Kindred Keep (Slice)}
+                GODOT_PORT: "6550"
+            hint: Local-only; do not schedule in k3s/Flux. Requires Godot plugin and a running Godot instance on localhost:6550.
+            timeout: 120
+            always_allow:
+                - godot_logs
+                - godot_logs_stream
+                - godot_scene_tree
+                - godot_inspect
+                - godot_call
+                - godot_signal
+                - godot_eval
+                - godot_set
+                - godot_screenshot
+          targets:
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-godot
+                env:
+                    GODOT_HOST: 127.0.0.1
+                    GODOT_LOG_PATH: ${env:GODOT_LOG_PATH:-~/Library/Application Support/Godot/app_userdata/Kindred Keep (Slice)}
+                    GODOT_PORT: "6550"
+                type: stdio
+        - name: prometheus
+          categories:
+            - monitoring
+            - observability
+          common:
+            description: Query and analyze Prometheus metrics (Go native)
+            command: ${repo}/services/loom-core/bin/mcp-prometheus
+            env:
+                PROMETHEUS_URL: ${env:PROMETHEUS_URL:-http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090}
+            hint: Use for monitoring, alerting, and SLO checking
+            timeout: 60
+            always_allow:
+                - query
+                - query_range
+                - list_alerts
+                - list_rules
+                - list_targets
+                - list_metrics
+                - list_labels
+                - label_values
+                - runtime_info
+          targets:
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-prometheus
+                env:
+                    PROMETHEUS_URL: ${env:PROMETHEUS_URL:-http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090}
+                type: stdio
+        - name: loki
+          categories:
+            - logging
+            - observability
+          common:
+            description: Query and analyze Loki log aggregation
+            command: ${repo}/services/loom-core/bin/mcp-loki
+            env:
+                CONTEXT_BROKER_HOST: 127.0.0.1
+                CONTEXT_BROKER_PORT: "9876"
+                CONTEXT_BROKER_PUBLISH: "1"
+                LOG_LEVEL: info
+                LOKI_PORT_FORWARD: ${env:LOKI_PORT_FORWARD:-true}
+                LOKI_URL: ${env:LOKI_URL:-http://loki.logging.svc.cluster.local:3100}
+            hint: Use for log searching, filtering, and analysis
+            timeout: 60
+            always_allow:
+                - loki_query
+                - loki_query_range
+                - loki_labels
+                - loki_label_values
+                - loki_series
+          targets:
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-loki
+                env:
+                    CONTEXT_BROKER_HOST: 127.0.0.1
+                    CONTEXT_BROKER_PORT: "9876"
+                    CONTEXT_BROKER_PUBLISH: "1"
+                    LOG_LEVEL: info
+                    LOKI_PORT_FORWARD: ${env:LOKI_PORT_FORWARD:-true}
+                    LOKI_URL: ${env:LOKI_URL:-http://loki.logging.svc.cluster.local:3100}
+                type: stdio
+        - name: grafana
+          categories:
+            - monitoring
+            - dashboards
+          common:
+            description: Grafana dashboard search and retrieval
+            command: ${repo}/services/loom-core/bin/mcp-grafana
+            env:
+                CONTEXT_BROKER_HOST: 127.0.0.1
+                CONTEXT_BROKER_PORT: "9876"
+                CONTEXT_BROKER_PUBLISH: "1"
+                GRAFANA_API_TOKEN: ${keychain:GRAFANA_API_TOKEN}
+                GRAFANA_PORT_FORWARD: ${env:GRAFANA_PORT_FORWARD:-true}
+                GRAFANA_URL: ${env:GRAFANA_URL:-http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local}
+                LOG_LEVEL: info
+            hint: Use to search dashboards or fetch JSON by UID
+            timeout: 60
+            always_allow:
+                - grafana_search
+                - grafana_get_dashboard
+          targets:
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-grafana
+                env:
+                    CONTEXT_BROKER_HOST: 127.0.0.1
+                    CONTEXT_BROKER_PORT: "9876"
+                    CONTEXT_BROKER_PUBLISH: "1"
+                    GRAFANA_API_TOKEN: ${keychain:GRAFANA_API_TOKEN}
+                    GRAFANA_PORT_FORWARD: ${env:GRAFANA_PORT_FORWARD:-true}
+                    GRAFANA_URL: ${env:GRAFANA_URL:-http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local}
+                    LOG_LEVEL: info
+                type: stdio
+        - name: morph_fast_apply
+          categories:
+            - ai
+            - code-editing
+          common:
+            description: Apply Morph's fast code edit patches with high accuracy (Go native)
+            command: ${repo}/services/loom-core/bin/mcp-morph-fast-apply
+            env:
+                MORPH_API_KEY: ${keychain:MORPH_API_KEY}
+                MORPH_BASE_URL: ${env:MORPH_BASE_URL:-https://api.morphllm.com/v1}
+                MORPH_MODEL: ${env:MORPH_APPLY_MODEL:-morph-v3-large}
+                WORKSPACE_ROOT: ${repo}
+            hint: Use for AI-driven code edits with automatic path resolution
+            timeout: 90
+            always_allow:
+                - edit_file
+                - morph_edit_file
+          targets:
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-morph-fast-apply
+                env:
+                    MORPH_API_KEY: ${env:MORPH_API_KEY}
+                    MORPH_BASE_URL: ${env:MORPH_BASE_URL:-https://api.morphllm.com/v1}
+                    MORPH_MODEL: ${env:MORPH_APPLY_MODEL:-morph-v3-large}
+                    WORKSPACE_ROOT: ${repo}
+                type: stdio
+        - name: morph_embeddings
+          categories:
+            - ai
+            - embeddings
+          common:
+            description: Generate Morph embeddings and coordinate Qdrant vector search
+            command: ${repo}/services/loom-core/bin/mcp-morph-embeddings
+            env:
+                LOG_LEVEL: info
+                MORPH_API_KEY: ${keychain:MORPH_API_KEY}
+                MORPH_EMBED_MODEL: ${env:MORPH_EMBED_MODEL:-embedding-001}
+                MORPH_QDRANT_API_KEY: ${keychain:MORPH_QDRANT_API_KEY}
+                MORPH_QDRANT_COLLECTION: ${env:MORPH_QDRANT_COLLECTION:-codex}
+                MORPH_QDRANT_URL: ${env:MORPH_QDRANT_URL:-http://192.168.50.176:6333}
+            hint: Use to embed content with Morph and manage Qdrant collections
+            timeout: 120
+            always_allow:
+                - morph_embeddings_embed
+                - morph_embeddings_upsert
+                - morph_embeddings_search
+          targets:
+            kilocode:
+                env:
+                    LOG_LEVEL: debug
+                    MORPH_API_KEY: ${env:MORPH_API_KEY}
+                    MORPH_QDRANT_API_KEY: ${env:MORPH_QDRANT_API_KEY}
+                timeout: 180
+                always_allow:
+                    - morph_embeddings.embed
+                    - morph_embeddings.upsert
+                    - morph_embeddings.search
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-morph-embeddings
+                env:
+                    MORPH_API_KEY: ${env:MORPH_API_KEY}
+                    MORPH_QDRANT_API_KEY: ${env:MORPH_QDRANT_API_KEY}
+                type: stdio
+        - name: qdrant
+          categories:
+            - database
+            - vector
+          common:
+            description: Qdrant vector database operations (Go native)
+            command: ${repo}/services/loom-core/bin/mcp-qdrant
+            env:
+                QDRANT_API_KEY: ${env:QDRANT_API_KEY}
+                QDRANT_URL: ${env:QDRANT_URL:-http://192.168.50.176:6333}
+            hint: Use for vector search, embeddings storage, and semantic retrieval
+            timeout: 60
+            always_allow:
+                - qdrant_list_collections
+                - qdrant_get_collection
+                - qdrant_search
+                - qdrant_scroll
+          targets:
+            codex:
+                env:
+                    QDRANT_API_KEY: ${keychain:QDRANT_API_KEY}
+            vscode:
+                command: ${repo}/services/loom-core/bin/mcp-qdrant
+                env:
+                    QDRANT_API_KEY: ${env:QDRANT_API_KEY}
+                    QDRANT_URL: ${env:QDRANT_URL:-http://192.168.50.176:6333}
+                type: stdio
+kind: ConfigMap
+metadata:
+  labels:
+    app: fi-mcp-gateway
+    component: mcp-gateway
+  name: fi-mcp-gateway-registry
+  namespace: mcp-hub

@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: fi-mcp-gateway
+    component: mcp-gateway
+  name: fi-mcp-gateway
+  namespace: mcp-hub
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: fi-mcp-gateway
+  template:
+    metadata:
+      labels:
+        app: fi-mcp-gateway
+        component: mcp-gateway
+    spec:
+      containers:
+        - args:
+            - --registry
+            - /config/registry.yaml
+            - --listen
+            - :8080
+          env:
+            - name: FI_MCP_AUTH_MODE
+              value: none
+            - name: FI_MCP_AUTH_REQUIRED
+              value: "true"
+            - name: FI_MCP_POLICY_DEFAULT
+              value: allow
+          envFrom:
+            - secretRef:
+                name: fi-mcp-gateway-secrets
+                optional: true
+          image: registry.harbor.lan/mcp/fi-mcp-gateway:latest
+          imagePullPolicy: Always
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          name: fi-mcp-gateway
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /config
+              name: registry
+              readOnly: true
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      volumes:
+        - configMap:
+            name: fi-mcp-gateway-registry
+          name: registry

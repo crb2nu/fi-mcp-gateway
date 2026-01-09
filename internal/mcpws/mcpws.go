@@ -397,7 +397,8 @@ type jsonrpcEnvelope struct {
 }
 
 type callToolParams struct {
-	Name string `json:"name"`
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
 }
 
 func newSession(gw *Gateway, principal *auth.Principal, profile, server string, client *websocket.Conn) *session {
@@ -642,7 +643,12 @@ func (s *session) routeMessage(raw []byte) (routeDecision, error) {
 			return routeDecision{}, fmt.Errorf("invalid tools/call: missing params.name")
 		}
 
-		server, err := s.gw.ResolveServer(s.profile, p.Name)
+		var args map[string]any
+		if len(p.Arguments) > 0 {
+			_ = json.Unmarshal(p.Arguments, &args)
+		}
+
+		server, err := s.gw.ResolveServer(s.profile, p.Name, args)
 		if err != nil {
 			return routeDecision{}, err
 		}
@@ -665,15 +671,36 @@ func (s *session) routeMessage(raw []byte) (routeDecision, error) {
 
 // ResolveServer determines the best server for a given tool name and profile.
 // It checks:
-// 1. AlwaysAllow list in registry
-// 2. server__tool prefix naming convention
-// 3. Unique tool name in the global tool index
-func (g *Gateway) ResolveServer(profile, toolName string) (string, error) {
+// 1. Explicit Routing Rules in registry
+// 2. AlwaysAllow list in registry
+// 3. server__tool prefix naming convention
+// 4. Unique tool name in the global tool index
+func (g *Gateway) ResolveServer(profile, toolName string, args map[string]any) (string, error) {
 	if g.cfg.Registry == nil {
 		return "", nil
 	}
 
-	// 1. Check AlwaysAllow & Prefix (legacy explicit routing)
+	// 1. Check Explicit Routing Rules
+	for _, rule := range g.cfg.Registry.Routing {
+		if rule == nil || rule.ToolName != toolName {
+			continue
+		}
+
+		argVal, ok := args[rule.Argument].(string)
+		if ok {
+			for _, c := range rule.Cases {
+				if matchPattern(argVal, c.Match) {
+					return c.Server, nil
+				}
+			}
+		}
+
+		if rule.Default != "" {
+			return rule.Default, nil
+		}
+	}
+
+	// 2. Check AlwaysAllow & Prefix (legacy explicit routing)
 	for _, srv := range g.cfg.Registry.Servers {
 		if srv == nil {
 			continue
@@ -697,7 +724,7 @@ func (g *Gateway) ResolveServer(profile, toolName string) (string, error) {
 		}
 	}
 
-	// 2. Check Global Tool Index
+	// 3. Check Global Tool Index
 	servers, ok := g.toolIndex[toolName]
 	if ok {
 		if len(servers) == 1 {
@@ -705,17 +732,30 @@ func (g *Gateway) ResolveServer(profile, toolName string) (string, error) {
 		}
 		if len(servers) > 1 {
 			// Ambiguous tool - multiple servers offer it
-			// TODO: Add support for argument-based routing or strategy selection
-			return "", fmt.Errorf("ambiguous tool %q provided by multiple servers: %v", toolName, servers)
+			return "", fmt.Errorf("ambiguous tool %q provided by multiple servers: %v (provide server__ prefix or configure routing)", toolName, servers)
 		}
 	}
 
 	return "", nil
 }
 
+// matchPattern supports basic glob matching: "*" at start or end.
+func matchPattern(value, pattern string) bool {
+	if pattern == "*" {
+		return true
+	}
+	if strings.HasSuffix(pattern, "*") {
+		return strings.HasPrefix(value, strings.TrimSuffix(pattern, "*"))
+	}
+	if strings.HasPrefix(pattern, "*") {
+		return strings.HasSuffix(value, strings.TrimPrefix(pattern, "*"))
+	}
+	return value == pattern
+}
+
 // Legacy alias for compatibility, delegating to ResolveServer
 func (g *Gateway) routeByToolName(profile, toolName string) string {
-	srv, _ := g.ResolveServer(profile, toolName)
+	srv, _ := g.ResolveServer(profile, toolName, nil)
 	return srv
 }
 
