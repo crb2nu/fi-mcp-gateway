@@ -18,6 +18,7 @@ import (
 	"github.com/gorilla/websocket"
 	"gitlab.flexinfer.ai/libs/fi-mcp-kit/pkg/pool"
 	"gitlab.flexinfer.ai/libs/fi-mcp-kit/pkg/registry"
+	"gitlab.flexinfer.ai/libs/fi-mcp-kit/pkg/router"
 	"gitlab.flexinfer.ai/libs/mcp-go"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/auth"
 	"gitlab.flexinfer.ai/services/fi-mcp-gateway/internal/logger"
@@ -61,8 +62,6 @@ type Config struct {
 	BackendIdleTimeout time.Duration
 }
 
-type ToolIndex map[string][]string
-
 type Gateway struct {
 	cfg Config
 
@@ -71,7 +70,7 @@ type Gateway struct {
 	mu       sync.Mutex
 	sessions map[string]*session
 
-	toolIndex ToolIndex
+	router *router.Router
 }
 
 func New(cfg Config) *Gateway {
@@ -112,69 +111,19 @@ func New(cfg Config) *Gateway {
 		cfg.BackendIdleTimeout = envDurationDefault("FI_MCP_BACKEND_IDLE_TIMEOUT", 5*time.Minute)
 	}
 
-	g := &Gateway{
+	rtr := router.New(router.Config{
+		Registry: cfg.Registry,
+	})
+
+	return &Gateway{
 		cfg: cfg,
 		upgrader: websocket.Upgrader{
 			HandshakeTimeout: cfg.HandshakeTimeout,
 			CheckOrigin:      func(r *http.Request) bool { return true },
 		},
-		sessions:  make(map[string]*session),
-		toolIndex: make(ToolIndex),
+		sessions: make(map[string]*session),
+		router:   rtr,
 	}
-
-	g.buildToolIndex()
-	return g
-}
-
-func (g *Gateway) buildToolIndex() {
-	if g.cfg.Registry == nil {
-		return
-	}
-
-	// Iterate over all servers and their static tools to build the index
-	for _, srv := range g.cfg.Registry.Servers {
-		if srv == nil {
-			continue
-		}
-		// Skip local-only servers as we can't route to them from the gateway
-		if srv.IsLocalOnly() {
-			continue
-		}
-
-		// Check Common config
-		if srv.Common != nil {
-			for _, tool := range srv.Common.Tools {
-				g.addToolToIndex(tool.Name, srv.Name)
-			}
-		}
-
-		// Check target-specific configs
-		if srv.Targets != nil {
-			for _, target := range srv.Targets {
-				if target != nil {
-					for _, tool := range target.Tools {
-						g.addToolToIndex(tool.Name, srv.Name)
-					}
-				}
-			}
-		}
-	}
-}
-
-func (g *Gateway) addToolToIndex(toolName, serverName string) {
-	servers, ok := g.toolIndex[toolName]
-	if !ok {
-		g.toolIndex[toolName] = []string{serverName}
-		return
-	}
-
-	// Check if already added to avoid duplicates
-	for _, s := range servers {
-		if s == serverName {
-			return
-		}
-	}
-	g.toolIndex[toolName] = append(servers, serverName)
 }
 
 func (g *Gateway) HandleWS(w http.ResponseWriter, r *http.Request) {
@@ -365,6 +314,9 @@ type session struct {
 	backendsMu sync.Mutex
 	backends   map[string]*backend
 	pool       *pool.Pool
+
+	concurrency chan struct{}
+	wg          sync.WaitGroup
 }
 
 type backend struct {
@@ -392,6 +344,7 @@ func (b *backend) syncLastUsed() {
 }
 
 type jsonrpcEnvelope struct {
+	ID     any             `json:"id,omitempty"`
 	Method string          `json:"method"`
 	Params json.RawMessage `json:"params,omitempty"`
 }
@@ -441,6 +394,7 @@ func newSession(gw *Gateway, principal *auth.Principal, profile, server string, 
 			IdleTimeout: gw.cfg.BackendIdleTimeout,
 			DialFunc:    dialFunc,
 		}),
+		concurrency: make(chan struct{}, 10), // Limit to 10 concurrent requests per session
 	}
 }
 
@@ -460,6 +414,7 @@ func (s *session) Close() {
 
 	_ = s.pool.Close()
 	_ = s.client.Close()
+	s.wg.Wait()
 }
 
 func (s *session) Run(ctx context.Context) {
@@ -488,93 +443,119 @@ func (s *session) Run(ctx context.Context) {
 
 		s.lastActive = time.Now()
 
-		route, err := s.routeMessage(msg)
-		if err != nil {
+		// Parse envelope to check if it's a request or notification
+		var env jsonrpcEnvelope
+		if err := json.Unmarshal(msg, &env); err != nil {
 			metrics.ErrorsTotal.WithLabelValues("route").Inc()
-			s.sendJSONRPCError(msg, err.Error())
-			continue
-		}
-		if !s.gw.serverExistsAndHubDeployable(route.serverName) {
-			metrics.ErrorsTotal.WithLabelValues("route").Inc()
-			s.sendJSONRPCError(msg, fmt.Sprintf("unknown or local-only server: %s", route.serverName))
+			s.sendJSONRPCError(msg, "invalid json-rpc message")
 			continue
 		}
 
-		// Rate limit check
-		user := ""
-		if s.principal != nil {
-			user = s.principal.Subject
-		}
-		if s.gw.cfg.RateLimiter != nil {
-			allowed, retryAfter, err := s.gw.cfg.RateLimiter.CheckMessage(s.tenantID, user, route.toolName)
-			if err != nil {
-				logger.Error("rate limit check failed", "error", err, "tenant", s.tenantID, "user", user)
-			}
-			if !allowed {
-				metrics.ErrorsTotal.WithLabelValues("ratelimit").Inc()
-				metrics.RateLimitedTotal.WithLabelValues(s.tenantID, user).Inc()
-				errMsg := fmt.Sprintf("rate limited: retry after %v", retryAfter)
-				s.sendJSONRPCError(msg, errMsg)
-				continue
-			}
-		}
-
-		// Quota check for tool calls
-		if s.gw.cfg.QuotaManager != nil && route.method == "tools/call" {
-			result, err := s.gw.cfg.QuotaManager.Check(ctx, s.tenantID, user, quota.QuotaTypeToolCalls, 1)
-			if err != nil {
-				metrics.ErrorsTotal.WithLabelValues("quota").Inc()
-				s.sendJSONRPCError(msg, "quota exceeded")
-				continue
-			}
-			if !result.Allowed {
-				metrics.ErrorsTotal.WithLabelValues("quota").Inc()
-				s.sendJSONRPCError(msg, fmt.Sprintf("quota exceeded: %d/%d tool calls used", result.Current, result.Limit))
-				continue
-			}
-		}
-
-		decision := s.gw.cfg.Policy.Authorize(ctx, s.principal, policy.Request{
-			Method:     route.method,
-			ToolName:   route.toolName,
-			ServerName: route.serverName,
-			Profile:    s.profile,
-		})
-		if !decision.Allow {
-			msgText := "forbidden"
-			if decision.Reason != "" {
-				msgText = "forbidden: " + decision.Reason
-			}
-			s.sendJSONRPCError(msg, msgText)
+		// Handle notifications synchronously to preserve ordering
+		if env.ID == nil {
+			s.handleMessage(ctx, msgType, msg)
 			continue
 		}
 
-		b, err := s.getBackend(ctx, route.serverName)
-		if err != nil {
-			s.sendJSONRPCError(msg, "failed to connect to backend")
-			continue
-		}
-
-		b.touch()
-		startTime := time.Now()
-		if err := b.tr.WriteMessage(msgType, msg); err != nil {
-			s.dropBackend(route.serverName, true)
-			s.sendJSONRPCError(msg, "backend write failed")
-			// Track failed usage
-			s.trackUsage(ctx, route, user, startTime, false, "backend_write_failed")
-			continue
-		}
-
-		// Increment quota for successful tool calls
-		if s.gw.cfg.QuotaManager != nil && route.method == "tools/call" {
-			if err := s.gw.cfg.QuotaManager.Increment(ctx, s.tenantID, user, quota.QuotaTypeToolCalls, 1); err != nil {
-				logger.Error("quota increment failed", "error", err, "tenant", s.tenantID, "user", user)
-			}
-		}
-
-		// Track successful usage
-		s.trackUsage(ctx, route, user, startTime, true, "")
+		// Handle requests concurrently
+		s.concurrency <- struct{}{}
+		s.wg.Add(1)
+		go func(mType int, m []byte) {
+			defer s.wg.Done()
+			defer func() { <-s.concurrency }()
+			s.handleMessage(ctx, mType, m)
+		}(msgType, msg)
 	}
+}
+
+func (s *session) handleMessage(ctx context.Context, msgType int, msg []byte) {
+	route, err := s.routeMessage(msg)
+	if err != nil {
+		metrics.ErrorsTotal.WithLabelValues("route").Inc()
+		s.sendJSONRPCError(msg, err.Error())
+		return
+	}
+	if !s.gw.serverExistsAndHubDeployable(route.serverName) {
+		metrics.ErrorsTotal.WithLabelValues("route").Inc()
+		s.sendJSONRPCError(msg, fmt.Sprintf("unknown or local-only server: %s", route.serverName))
+		return
+	}
+
+	user := ""
+	if s.principal != nil {
+		user = s.principal.Subject
+	}
+
+	// Rate limit check
+	if s.gw.cfg.RateLimiter != nil {
+		allowed, retryAfter, err := s.gw.cfg.RateLimiter.CheckMessage(s.tenantID, user, route.toolName)
+		if err != nil {
+			logger.Error("rate limit check failed", "error", err, "tenant", s.tenantID, "user", user)
+		}
+		if !allowed {
+			metrics.ErrorsTotal.WithLabelValues("ratelimit").Inc()
+			metrics.RateLimitedTotal.WithLabelValues(s.tenantID, user).Inc()
+			errMsg := fmt.Sprintf("rate limited: retry after %v", retryAfter)
+			s.sendJSONRPCError(msg, errMsg)
+			return
+		}
+	}
+
+	// Quota check for tool calls
+	if s.gw.cfg.QuotaManager != nil && route.method == "tools/call" {
+		result, err := s.gw.cfg.QuotaManager.Check(ctx, s.tenantID, user, quota.QuotaTypeToolCalls, 1)
+		if err != nil {
+			metrics.ErrorsTotal.WithLabelValues("quota").Inc()
+			s.sendJSONRPCError(msg, "quota exceeded")
+			return
+		}
+		if !result.Allowed {
+			metrics.ErrorsTotal.WithLabelValues("quota").Inc()
+			s.sendJSONRPCError(msg, fmt.Sprintf("quota exceeded: %d/%d tool calls used", result.Current, result.Limit))
+			return
+		}
+	}
+
+	decision := s.gw.cfg.Policy.Authorize(ctx, s.principal, policy.Request{
+		Method:     route.method,
+		ToolName:   route.toolName,
+		ServerName: route.serverName,
+		Profile:    s.profile,
+	})
+	if !decision.Allow {
+		msgText := "forbidden"
+		if decision.Reason != "" {
+			msgText = "forbidden: " + decision.Reason
+		}
+		s.sendJSONRPCError(msg, msgText)
+		return
+	}
+
+	b, err := s.getBackend(ctx, route.serverName)
+	if err != nil {
+		s.sendJSONRPCError(msg, "failed to connect to backend")
+		return
+	}
+
+	b.touch()
+	startTime := time.Now()
+	if err := b.tr.WriteMessage(msgType, msg); err != nil {
+		s.dropBackend(route.serverName, true)
+		s.sendJSONRPCError(msg, "backend write failed")
+		// Track failed usage
+		s.trackUsage(ctx, route, user, startTime, false, "backend_write_failed")
+		return
+	}
+
+	// Increment quota for successful tool calls
+	if s.gw.cfg.QuotaManager != nil && route.method == "tools/call" {
+		if err := s.gw.cfg.QuotaManager.Increment(ctx, s.tenantID, user, quota.QuotaTypeToolCalls, 1); err != nil {
+			logger.Error("quota increment failed", "error", err, "tenant", s.tenantID, "user", user)
+		}
+	}
+
+	// Track successful usage
+	s.trackUsage(ctx, route, user, startTime, true, "")
 }
 
 func (s *session) reapBackendsLoop(ctx context.Context) {
@@ -648,7 +629,7 @@ func (s *session) routeMessage(raw []byte) (routeDecision, error) {
 			_ = json.Unmarshal(p.Arguments, &args)
 		}
 
-		server, err := s.gw.ResolveServer(s.profile, p.Name, args)
+		server, err := s.gw.router.ResolveServer(s.profile, p.Name, args)
 		if err != nil {
 			return routeDecision{}, err
 		}
@@ -667,96 +648,6 @@ func (s *session) routeMessage(raw []byte) (routeDecision, error) {
 		}
 		return routeDecision{method: env.Method, serverName: s.boundServer}, nil
 	}
-}
-
-// ResolveServer determines the best server for a given tool name and profile.
-// It checks:
-// 1. Explicit Routing Rules in registry
-// 2. AlwaysAllow list in registry
-// 3. server__tool prefix naming convention
-// 4. Unique tool name in the global tool index
-func (g *Gateway) ResolveServer(profile, toolName string, args map[string]any) (string, error) {
-	if g.cfg.Registry == nil {
-		return "", nil
-	}
-
-	// 1. Check Explicit Routing Rules
-	for _, rule := range g.cfg.Registry.Routing {
-		if rule == nil || rule.ToolName != toolName {
-			continue
-		}
-
-		argVal, ok := args[rule.Argument].(string)
-		if ok {
-			for _, c := range rule.Cases {
-				if matchPattern(argVal, c.Match) {
-					return c.Server, nil
-				}
-			}
-		}
-
-		if rule.Default != "" {
-			return rule.Default, nil
-		}
-	}
-
-	// 2. Check AlwaysAllow & Prefix (legacy explicit routing)
-	for _, srv := range g.cfg.Registry.Servers {
-		if srv == nil {
-			continue
-		}
-		if srv.IsLocalOnly() {
-			continue
-		}
-
-		spec, err := g.cfg.Registry.GetServerSpec(srv.Name, profile)
-		if err == nil && spec != nil {
-			for _, allowed := range spec.AlwaysAllow {
-				if allowed == toolName {
-					return srv.Name, nil
-				}
-			}
-		}
-
-		prefix := srv.Name + "__"
-		if strings.HasPrefix(toolName, prefix) {
-			return srv.Name, nil
-		}
-	}
-
-	// 3. Check Global Tool Index
-	servers, ok := g.toolIndex[toolName]
-	if ok {
-		if len(servers) == 1 {
-			return servers[0], nil
-		}
-		if len(servers) > 1 {
-			// Ambiguous tool - multiple servers offer it
-			return "", fmt.Errorf("ambiguous tool %q provided by multiple servers: %v (provide server__ prefix or configure routing)", toolName, servers)
-		}
-	}
-
-	return "", nil
-}
-
-// matchPattern supports basic glob matching: "*" at start or end.
-func matchPattern(value, pattern string) bool {
-	if pattern == "*" {
-		return true
-	}
-	if strings.HasSuffix(pattern, "*") {
-		return strings.HasPrefix(value, strings.TrimSuffix(pattern, "*"))
-	}
-	if strings.HasPrefix(pattern, "*") {
-		return strings.HasSuffix(value, strings.TrimPrefix(pattern, "*"))
-	}
-	return value == pattern
-}
-
-// Legacy alias for compatibility, delegating to ResolveServer
-func (g *Gateway) routeByToolName(profile, toolName string) string {
-	srv, _ := g.ResolveServer(profile, toolName, nil)
-	return srv
 }
 
 func (s *session) getBackend(ctx context.Context, serverName string) (*backend, error) {

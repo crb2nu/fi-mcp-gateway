@@ -83,6 +83,16 @@ func (s *Server) Handler() http.Handler {
 	// Metrics endpoint (no rate limiting)
 	mux.Handle("/metrics", promhttp.Handler())
 
+	mux.HandleFunc("GET /hosts", func(w http.ResponseWriter, r *http.Request) {
+		hosts := make([]string, 0, len(s.reg.Servers))
+		for _, srv := range s.reg.Servers {
+			if srv != nil && !srv.IsLocalOnly() {
+				hosts = append(hosts, srv.Name)
+			}
+		}
+		writeJSON(w, http.StatusOK, hosts)
+	})
+
 	// Build API mux (these get rate limited)
 	apiMux := http.NewServeMux()
 
