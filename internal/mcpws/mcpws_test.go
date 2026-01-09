@@ -424,6 +424,71 @@ func TestRouteByToolName_AlwaysAllow(t *testing.T) {
 	}
 }
 
+func TestResolveServer_GlobalIndex(t *testing.T) {
+	t.Parallel()
+
+	reg := &registry.Registry{
+		Servers: []*registry.Server{
+			{
+				Name:       "server1",
+				Categories: []string{"hub"},
+				Common: &registry.TargetSpec{
+					Tools: []registry.ToolSchema{
+						{Name: "unique_tool"},
+					},
+				},
+			},
+			{
+				Name:       "server2",
+				Categories: []string{"hub"},
+				Common: &registry.TargetSpec{
+					Tools: []registry.ToolSchema{
+						{Name: "shared_tool"},
+					},
+				},
+			},
+			{
+				Name:       "server3",
+				Categories: []string{"hub"},
+				Common: &registry.TargetSpec{
+					Tools: []registry.ToolSchema{
+						{Name: "shared_tool"},
+					},
+				},
+			},
+		},
+	}
+
+	gw := New(Config{Registry: reg})
+
+	// Test unique tool routing
+	srv, err := gw.ResolveServer("common", "unique_tool")
+	if err != nil {
+		t.Fatalf("ResolveServer unique_tool failed: %v", err)
+	}
+	if srv != "server1" {
+		t.Errorf("expected server1, got %q", srv)
+	}
+
+	// Test ambiguous tool routing
+	_, err = gw.ResolveServer("common", "shared_tool")
+	if err == nil {
+		t.Fatal("expected error for ambiguous tool")
+	}
+	if !strings.Contains(err.Error(), "ambiguous tool") {
+		t.Errorf("expected ambiguous tool error, got: %v", err)
+	}
+
+	// Test unknown tool
+	srv, err = gw.ResolveServer("common", "unknown_tool")
+	if err != nil {
+		t.Fatalf("unexpected error for unknown tool: %v", err)
+	}
+	if srv != "" {
+		t.Errorf("expected empty string for unknown tool, got %q", srv)
+	}
+}
+
 func startFakeMCPBackend(t *testing.T) (port int, closeFn func(), connCount *int32) {
 	t.Helper()
 
