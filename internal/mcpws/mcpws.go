@@ -61,6 +61,8 @@ type Config struct {
 	BackendIdleTimeout time.Duration
 }
 
+type ToolIndex map[string][]string
+
 type Gateway struct {
 	cfg Config
 
@@ -68,6 +70,8 @@ type Gateway struct {
 
 	mu       sync.Mutex
 	sessions map[string]*session
+
+	toolIndex ToolIndex
 }
 
 func New(cfg Config) *Gateway {
@@ -108,14 +112,69 @@ func New(cfg Config) *Gateway {
 		cfg.BackendIdleTimeout = envDurationDefault("FI_MCP_BACKEND_IDLE_TIMEOUT", 5*time.Minute)
 	}
 
-	return &Gateway{
+	g := &Gateway{
 		cfg: cfg,
 		upgrader: websocket.Upgrader{
 			HandshakeTimeout: cfg.HandshakeTimeout,
 			CheckOrigin:      func(r *http.Request) bool { return true },
 		},
-		sessions: make(map[string]*session),
+		sessions:  make(map[string]*session),
+		toolIndex: make(ToolIndex),
 	}
+
+	g.buildToolIndex()
+	return g
+}
+
+func (g *Gateway) buildToolIndex() {
+	if g.cfg.Registry == nil {
+		return
+	}
+
+	// Iterate over all servers and their static tools to build the index
+	for _, srv := range g.cfg.Registry.Servers {
+		if srv == nil {
+			continue
+		}
+		// Skip local-only servers as we can't route to them from the gateway
+		if srv.IsLocalOnly() {
+			continue
+		}
+
+		// Check Common config
+		if srv.Common != nil {
+			for _, tool := range srv.Common.Tools {
+				g.addToolToIndex(tool.Name, srv.Name)
+			}
+		}
+
+		// Check target-specific configs
+		if srv.Targets != nil {
+			for _, target := range srv.Targets {
+				if target != nil {
+					for _, tool := range target.Tools {
+						g.addToolToIndex(tool.Name, srv.Name)
+					}
+				}
+			}
+		}
+	}
+}
+
+func (g *Gateway) addToolToIndex(toolName, serverName string) {
+	servers, ok := g.toolIndex[toolName]
+	if !ok {
+		g.toolIndex[toolName] = []string{serverName}
+		return
+	}
+
+	// Check if already added to avoid duplicates
+	for _, s := range servers {
+		if s == serverName {
+			return
+		}
+	}
+	g.toolIndex[toolName] = append(servers, serverName)
 }
 
 func (g *Gateway) HandleWS(w http.ResponseWriter, r *http.Request) {
@@ -436,7 +495,7 @@ func (s *session) Run(ctx context.Context) {
 		}
 		if !s.gw.serverExistsAndHubDeployable(route.serverName) {
 			metrics.ErrorsTotal.WithLabelValues("route").Inc()
-			s.sendJSONRPCError(msg, "unknown or local-only server")
+			s.sendJSONRPCError(msg, fmt.Sprintf("unknown or local-only server: %s", route.serverName))
 			continue
 		}
 
@@ -583,9 +642,14 @@ func (s *session) routeMessage(raw []byte) (routeDecision, error) {
 			return routeDecision{}, fmt.Errorf("invalid tools/call: missing params.name")
 		}
 
-		if server := s.gw.routeByToolName(s.profile, p.Name); server != "" {
+		server, err := s.gw.ResolveServer(s.profile, p.Name)
+		if err != nil {
+			return routeDecision{}, err
+		}
+		if server != "" {
 			return routeDecision{method: env.Method, toolName: p.Name, serverName: server}, nil
 		}
+
 		if s.boundServer != "" {
 			return routeDecision{method: env.Method, toolName: p.Name, serverName: s.boundServer}, nil
 		}
@@ -599,11 +663,17 @@ func (s *session) routeMessage(raw []byte) (routeDecision, error) {
 	}
 }
 
-func (g *Gateway) routeByToolName(profile, toolName string) string {
+// ResolveServer determines the best server for a given tool name and profile.
+// It checks:
+// 1. AlwaysAllow list in registry
+// 2. server__tool prefix naming convention
+// 3. Unique tool name in the global tool index
+func (g *Gateway) ResolveServer(profile, toolName string) (string, error) {
 	if g.cfg.Registry == nil {
-		return ""
+		return "", nil
 	}
 
+	// 1. Check AlwaysAllow & Prefix (legacy explicit routing)
 	for _, srv := range g.cfg.Registry.Servers {
 		if srv == nil {
 			continue
@@ -616,18 +686,37 @@ func (g *Gateway) routeByToolName(profile, toolName string) string {
 		if err == nil && spec != nil {
 			for _, allowed := range spec.AlwaysAllow {
 				if allowed == toolName {
-					return srv.Name
+					return srv.Name, nil
 				}
 			}
 		}
 
 		prefix := srv.Name + "__"
 		if strings.HasPrefix(toolName, prefix) {
-			return srv.Name
+			return srv.Name, nil
 		}
 	}
 
-	return ""
+	// 2. Check Global Tool Index
+	servers, ok := g.toolIndex[toolName]
+	if ok {
+		if len(servers) == 1 {
+			return servers[0], nil
+		}
+		if len(servers) > 1 {
+			// Ambiguous tool - multiple servers offer it
+			// TODO: Add support for argument-based routing or strategy selection
+			return "", fmt.Errorf("ambiguous tool %q provided by multiple servers: %v", toolName, servers)
+		}
+	}
+
+	return "", nil
+}
+
+// Legacy alias for compatibility, delegating to ResolveServer
+func (g *Gateway) routeByToolName(profile, toolName string) string {
+	srv, _ := g.ResolveServer(profile, toolName)
+	return srv
 }
 
 func (s *session) getBackend(ctx context.Context, serverName string) (*backend, error) {
