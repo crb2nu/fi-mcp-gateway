@@ -1,6 +1,6 @@
 module gitlab.flexinfer.ai/services/fi-mcp-gateway
 
-go 1.24.0
+go 1.25.5
 
 require (
 	github.com/MicahParks/keyfunc v1.9.0
@@ -11,7 +11,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.7.3
 	gitlab.flexinfer.ai/libs/fi-mcp-kit v0.1.0
-	gitlab.flexinfer.ai/libs/mcp-go v0.2.0
+	gitlab.flexinfer.ai/libs/mcp-go v0.2.1-0.20260116221656-df35197c2d46
 )
 
 require (

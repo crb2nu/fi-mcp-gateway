@@ -126,6 +126,13 @@ func New(cfg Config) *Gateway {
 	}
 }
 
+func (g *Gateway) ResolveServer(profile, tool string, args map[string]any) (string, error) {
+	if g == nil || g.router == nil {
+		return "", fmt.Errorf("router not initialized")
+	}
+	return g.router.ResolveServer(profile, tool, args)
+}
+
 func (g *Gateway) HandleWS(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
