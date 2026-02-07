@@ -46,7 +46,7 @@ build:
 
 deploy:
   stage: deploy
-  image: alpine:3.21
+  image: registry.harbor.lan/dockerhub-cache/library/alpine:3.21
   script:
     - echo "No deploy configured for fi-mcp-gateway (binary-only repo)."
   rules:
