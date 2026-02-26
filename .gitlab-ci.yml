@@ -26,7 +26,8 @@ lint:gofmt:
   extends: [.go-base, .go-image]
   stage: lint
   script:
-    - if [ -n "$(gofmt -l .)" ]; then echo "Go code is not formatted"; gofmt -d .; exit 1; fi
+    - unformatted="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
+    - if [ -n "$unformatted" ]; then echo "Go code is not formatted"; git ls-files -z '*.go' | xargs -0 gofmt -d; exit 1; fi
 
 lint:vet:
   extends: [.go-base, .go-image]
