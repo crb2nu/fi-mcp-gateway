@@ -9,6 +9,8 @@ variables:
   GO_VERSION: "1.25"
   GOPRIVATE: "gitlab.flexinfer.ai/*"
   GOFLAGS: "-buildvcs=false"
+  # Work around Harbor reachability issues for k8s runner helper image pulls.
+  KUBERNETES_HELPER_IMAGE: "registry.gitlab.com/gitlab-org/gitlab-runner/gitlab-runner-helper:x86_64-v18.6.2"
 
 # Override image since GitLab CI doesn't expand variables in image field from includes
 .go-image:
