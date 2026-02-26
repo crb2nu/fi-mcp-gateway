@@ -20,7 +20,7 @@ func NewGatewayAdapter(limiter *HierarchicalLimiter) *GatewayAdapter {
 // CheckMessage checks if a message should be rate limited.
 // Implements mcpws.RateLimiter interface.
 func (a *GatewayAdapter) CheckMessage(tenant, user, tool string) (allowed bool, retryAfter time.Duration, err error) {
-	if a.limiter == nil || !a.limiter.Enabled() {
+	if a == nil || a.limiter == nil || !a.limiter.Enabled() {
 		return true, 0, nil
 	}
 
