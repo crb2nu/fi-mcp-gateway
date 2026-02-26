@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -494,8 +495,8 @@ func (s *session) handleMessage(ctx context.Context, msgType int, msg []byte) {
 	}
 
 	// Rate limit check
-	if s.gw.cfg.RateLimiter != nil {
-		allowed, retryAfter, err := s.gw.cfg.RateLimiter.CheckMessage(s.tenantID, user, route.toolName)
+	if !isNilRateLimiter(s.gw.cfg.RateLimiter) {
+		allowed, retryAfter, err := checkMessageSafe(s.gw.cfg.RateLimiter, s.tenantID, user, route.toolName)
 		if err != nil {
 			logger.Error("rate limit check failed", "error", err, "tenant", s.tenantID, "user", user)
 		}
@@ -819,6 +820,30 @@ func (s *session) trackUsage(ctx context.Context, route routeDecision, userID st
 	}
 
 	s.gw.cfg.UsageTracker.Track(ctx, event)
+}
+
+func isNilRateLimiter(limiter RateLimiter) bool {
+	if limiter == nil {
+		return true
+	}
+	v := reflect.ValueOf(limiter)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
+	}
+}
+
+func checkMessageSafe(limiter RateLimiter, tenant, user, tool string) (allowed bool, retryAfter time.Duration, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			allowed = true
+			retryAfter = 0
+			err = fmt.Errorf("rate limit panic recovered: %v", r)
+		}
+	}()
+	return limiter.CheckMessage(tenant, user, tool)
 }
 
 func (g *Gateway) trackSession(s *session) {

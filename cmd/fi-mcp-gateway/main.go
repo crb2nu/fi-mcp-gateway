@@ -54,11 +54,6 @@ func main() {
 	}
 	defer rateLimiter.Close()
 
-	var rateLimitAdapter *ratelimit.GatewayAdapter
-	if rateLimiter.Enabled() {
-		rateLimitAdapter = ratelimit.NewGatewayAdapter(rateLimiter)
-	}
-
 	// Initialize usage tracker
 	usageCfg := usage.LoadConfigFromEnv()
 	usageTracker, err := usage.New(usageCfg)
@@ -91,15 +86,19 @@ func main() {
 	// Connect billing webhooks to quota manager
 	quotaManager.SetWebhookSender(webhookSender)
 
-	api := httpapi.New(httpapi.Config{
+	apiCfg := httpapi.Config{
 		Registry:      reg,
 		Authenticator: auther,
 		Policy:        pol,
-		RateLimiter:   rateLimitAdapter,
 		APIKeys:       apikeysManager,
 		Quotas:        quotaManager,
 		Usage:         usageTracker,
-	})
+	}
+	if rateLimiter.Enabled() {
+		apiCfg.RateLimiter = ratelimit.NewGatewayAdapter(rateLimiter)
+	}
+
+	api := httpapi.New(apiCfg)
 	srv := &http.Server{
 		Addr:              *listenAddress,
 		Handler:           api.Handler(),

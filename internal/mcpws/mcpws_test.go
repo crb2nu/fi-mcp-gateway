@@ -167,6 +167,45 @@ func (headerTokenAuth) Authenticate(r *http.Request) (*auth.Principal, error) {
 	return &auth.Principal{Subject: "test"}, nil
 }
 
+type panicRateLimiter struct{}
+
+func (panicRateLimiter) CheckMessage(tenant, user, tool string) (bool, time.Duration, error) {
+	panic("boom")
+}
+
+type nilPtrRateLimiter struct{}
+
+func (*nilPtrRateLimiter) CheckMessage(tenant, user, tool string) (bool, time.Duration, error) {
+	return true, 0, nil
+}
+
+func TestCheckMessageSafe_RecoversFromPanic(t *testing.T) {
+	t.Parallel()
+
+	allowed, retryAfter, err := checkMessageSafe(panicRateLimiter{}, "tenant", "user", "tool")
+	if err == nil {
+		t.Fatalf("expected panic recovery error")
+	}
+	if !strings.Contains(err.Error(), "panic recovered") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !allowed {
+		t.Fatalf("expected allow-on-panic behavior")
+	}
+	if retryAfter != 0 {
+		t.Fatalf("expected retryAfter=0, got %v", retryAfter)
+	}
+}
+
+func TestIsNilRateLimiter_DetectsTypedNil(t *testing.T) {
+	t.Parallel()
+
+	var limiter RateLimiter = (*nilPtrRateLimiter)(nil)
+	if !isNilRateLimiter(limiter) {
+		t.Fatalf("expected typed nil interface to be detected as nil")
+	}
+}
+
 type denyToolsCallPolicy struct{}
 
 func (denyToolsCallPolicy) Authorize(ctx context.Context, p *auth.Principal, req policy.Request) policy.Decision {

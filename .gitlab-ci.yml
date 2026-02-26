@@ -6,22 +6,28 @@ include:
 stages: [lint, test, build, deploy]
 
 variables:
-  GO_VERSION: "1.24"
+  GO_VERSION: "1.25"
   GOPRIVATE: "gitlab.flexinfer.ai/*"
   GOFLAGS: "-buildvcs=false"
+  # Work around Harbor reachability issues for k8s runner helper image pulls.
+  KUBERNETES_HELPER_IMAGE: "registry.gitlab.com/gitlab-org/gitlab-runner/gitlab-runner-helper:x86_64-v18.6.2"
 
 # Override image since GitLab CI doesn't expand variables in image field from includes
 .go-image:
-  image: golang:1.24
+  image: golang:1.25
   before_script:
     - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.flexinfer.ai/".insteadOf "https://gitlab.flexinfer.ai/"
+    - mkdir -p ../../libs
+    - '[ -d ../../libs/fi-mcp-kit/.git ] || git clone --depth 1 https://gitlab.flexinfer.ai/libs/fi-mcp-kit.git ../../libs/fi-mcp-kit'
+    - '[ -d ../../libs/mcp-go/.git ] || git clone --depth 1 https://gitlab.flexinfer.ai/libs/mcp-go.git ../../libs/mcp-go'
     - go mod download
 
 lint:gofmt:
   extends: [.go-base, .go-image]
   stage: lint
   script:
-    - if [ -n "$(gofmt -l .)" ]; then echo "Go code is not formatted"; gofmt -d .; exit 1; fi
+    - unformatted="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
+    - if [ -n "$unformatted" ]; then echo "Go code is not formatted"; git ls-files -z '*.go' | xargs -0 gofmt -d; exit 1; fi
 
 lint:vet:
   extends: [.go-base, .go-image]
