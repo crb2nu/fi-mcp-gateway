@@ -247,6 +247,11 @@ func formatBackendHost(tmpl, serverName, namespace string) (string, error) {
 	if tmpl == "" {
 		return "", fmt.Errorf("empty host template")
 	}
+
+	// Kubernetes service names must be RFC 1123 compliant (lowercase, hyphens only).
+	// Registry server names use underscores (e.g. "agent_context"), so convert.
+	serverName = strings.ReplaceAll(serverName, "_", "-")
+
 	if !strings.Contains(tmpl, "%") {
 		return tmpl, nil
 	}

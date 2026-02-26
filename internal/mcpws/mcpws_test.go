@@ -730,3 +730,76 @@ func mustReadJSON(t *testing.T, conn *websocket.Conn, timeout time.Duration) map
 	}
 	return out
 }
+
+func TestFormatBackendHost(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		tmpl       string
+		serverName string
+		namespace  string
+		want       string
+		wantErr    bool
+	}{
+		{
+			name:       "simple name",
+			tmpl:       "mcp-%s.%s.svc.cluster.local",
+			serverName: "time",
+			namespace:  "loom-hub",
+			want:       "mcp-time.loom-hub.svc.cluster.local",
+		},
+		{
+			name:       "underscore converted to hyphen",
+			tmpl:       "mcp-%s.%s.svc.cluster.local",
+			serverName: "agent_context",
+			namespace:  "loom-hub",
+			want:       "mcp-agent-context.loom-hub.svc.cluster.local",
+		},
+		{
+			name:       "multiple underscores",
+			tmpl:       "mcp-%s.%s.svc.cluster.local",
+			serverName: "k8s_apps_k3s",
+			namespace:  "loom-hub",
+			want:       "mcp-k8s-apps-k3s.loom-hub.svc.cluster.local",
+		},
+		{
+			name:       "no template verbs",
+			tmpl:       "localhost",
+			serverName: "agent_context",
+			namespace:  "loom-hub",
+			want:       "localhost",
+		},
+		{
+			name:       "single verb template",
+			tmpl:       "mcp-%s.local",
+			serverName: "codebase_memory",
+			namespace:  "loom-hub",
+			want:       "mcp-codebase-memory.local",
+		},
+		{
+			name:    "empty template",
+			tmpl:    "",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := formatBackendHost(tt.tmpl, tt.serverName, tt.namespace)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
