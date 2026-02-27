@@ -731,6 +731,175 @@ func mustReadJSON(t *testing.T, conn *websocket.Conn, timeout time.Duration) map
 	return out
 }
 
+func TestResolveBackendURL_RegistryURL(t *testing.T) {
+	t.Parallel()
+
+	g := &Gateway{
+		cfg: Config{
+			Registry: &registry.Registry{
+				Servers: []*registry.Server{
+					{Name: "youtube", URL: "ws://mcp-youtube.loom-hub.svc.cluster.local:8080"},
+				},
+			},
+			ServerWSPath:       "/ws",
+			ServerHostTemplate: "mcp-%s.%s.svc.cluster.local",
+			HubNamespace:       "mcp-hub",
+			ServerPort:         "8080",
+			ServerScheme:       "ws",
+		},
+	}
+
+	got, err := g.resolveBackendURL("youtube")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "ws://mcp-youtube.loom-hub.svc.cluster.local:8080/ws"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolveBackendURL_TemplateFallback(t *testing.T) {
+	t.Parallel()
+
+	g := &Gateway{
+		cfg: Config{
+			Registry: &registry.Registry{
+				Servers: []*registry.Server{
+					{Name: "youtube"}, // no URL set
+				},
+			},
+			ServerWSPath:       "/ws",
+			ServerHostTemplate: "mcp-%s.%s.svc.cluster.local",
+			HubNamespace:       "mcp-hub",
+			ServerPort:         "8080",
+			ServerScheme:       "ws",
+		},
+	}
+
+	got, err := g.resolveBackendURL("youtube")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "ws://mcp-youtube.mcp-hub.svc.cluster.local:8080/ws"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolveBackendURL_NilRegistry(t *testing.T) {
+	t.Parallel()
+
+	g := &Gateway{
+		cfg: Config{
+			ServerWSPath:       "/ws",
+			ServerHostTemplate: "mcp-%s.%s.svc.cluster.local",
+			HubNamespace:       "mcp-hub",
+			ServerPort:         "8080",
+			ServerScheme:       "ws",
+		},
+	}
+
+	got, err := g.resolveBackendURL("youtube")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "ws://mcp-youtube.mcp-hub.svc.cluster.local:8080/ws"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolveBackendURL_CrossNamespace(t *testing.T) {
+	t.Parallel()
+
+	g := &Gateway{
+		cfg: Config{
+			Registry: &registry.Registry{
+				Servers: []*registry.Server{
+					{Name: "youtube", URL: "ws://mcp-youtube.loom-hub.svc.cluster.local:8080"},
+					{Name: "memory", URL: "ws://mcp-memory.mcp-hub.svc.cluster.local:8080"},
+				},
+			},
+			ServerWSPath:       "/ws",
+			ServerHostTemplate: "mcp-%s.%s.svc.cluster.local",
+			HubNamespace:       "loom-hub",
+			ServerPort:         "8080",
+			ServerScheme:       "ws",
+		},
+	}
+
+	// youtube → loom-hub namespace (from registry)
+	got, err := g.resolveBackendURL("youtube")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := "ws://mcp-youtube.loom-hub.svc.cluster.local:8080/ws"; got != want {
+		t.Errorf("youtube: got %q, want %q", got, want)
+	}
+
+	// memory → mcp-hub namespace (from registry)
+	got, err = g.resolveBackendURL("memory")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := "ws://mcp-memory.mcp-hub.svc.cluster.local:8080/ws"; got != want {
+		t.Errorf("memory: got %q, want %q", got, want)
+	}
+}
+
+func TestResolveBackendURL_TrailingSlashStripped(t *testing.T) {
+	t.Parallel()
+
+	g := &Gateway{
+		cfg: Config{
+			Registry: &registry.Registry{
+				Servers: []*registry.Server{
+					{Name: "youtube", URL: "ws://mcp-youtube.loom-hub.svc.cluster.local:8080/"},
+				},
+			},
+			ServerWSPath: "/ws",
+		},
+	}
+
+	got, err := g.resolveBackendURL("youtube")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "ws://mcp-youtube.loom-hub.svc.cluster.local:8080/ws"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolveBackendURL_UnknownServerFallsToTemplate(t *testing.T) {
+	t.Parallel()
+
+	g := &Gateway{
+		cfg: Config{
+			Registry: &registry.Registry{
+				Servers: []*registry.Server{
+					{Name: "youtube", URL: "ws://mcp-youtube.loom-hub.svc.cluster.local:8080"},
+				},
+			},
+			ServerWSPath:       "/ws",
+			ServerHostTemplate: "mcp-%s.%s.svc.cluster.local",
+			HubNamespace:       "loom-hub",
+			ServerPort:         "8080",
+			ServerScheme:       "ws",
+		},
+	}
+
+	got, err := g.resolveBackendURL("unknown-server")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "ws://mcp-unknown-server.loom-hub.svc.cluster.local:8080/ws"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestFormatBackendHost(t *testing.T) {
 	t.Parallel()
 

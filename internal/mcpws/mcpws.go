@@ -208,13 +208,31 @@ func (g *Gateway) serverExistsAndHubDeployable(serverName string) bool {
 	return false
 }
 
-func (g *Gateway) dialBackend(ctx context.Context, serverName string, headers http.Header) (*websocket.Conn, error) {
+// resolveBackendURL returns the WebSocket URL for a backend server.
+// It prefers the per-server URL from the registry (which includes the correct
+// namespace), falling back to template-based URL construction.
+func (g *Gateway) resolveBackendURL(serverName string) (string, error) {
+	// Prefer per-server URL from registry (includes correct namespace).
+	if g.cfg.Registry != nil {
+		if srv := g.cfg.Registry.GetServer(serverName); srv != nil && srv.URL != "" {
+			return strings.TrimRight(srv.URL, "/") + g.cfg.ServerWSPath, nil
+		}
+	}
+
+	// Fall back to template-based URL construction.
 	host, err := formatBackendHost(g.cfg.ServerHostTemplate, serverName, g.cfg.HubNamespace)
+	if err != nil {
+		return "", err
+	}
+	endpoint := fmt.Sprintf("%s:%s", host, g.cfg.ServerPort)
+	return fmt.Sprintf("%s://%s%s", g.cfg.ServerScheme, endpoint, g.cfg.ServerWSPath), nil
+}
+
+func (g *Gateway) dialBackend(ctx context.Context, serverName string, headers http.Header) (*websocket.Conn, error) {
+	dialURL, err := g.resolveBackendURL(serverName)
 	if err != nil {
 		return nil, err
 	}
-	endpoint := fmt.Sprintf("%s:%s", host, g.cfg.ServerPort)
-	url := fmt.Sprintf("%s://%s%s", g.cfg.ServerScheme, endpoint, g.cfg.ServerWSPath)
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: g.cfg.DialTimeout,
@@ -226,7 +244,7 @@ func (g *Gateway) dialBackend(ctx context.Context, serverName string, headers ht
 	}
 
 	start := time.Now()
-	conn, _, err := dialer.DialContext(ctx, url, headers)
+	conn, _, err := dialer.DialContext(ctx, dialURL, headers)
 	metrics.BackendDialDuration.Observe(time.Since(start).Seconds())
 	if err != nil {
 		metrics.ErrorsTotal.WithLabelValues("backend_dial").Inc()
