@@ -58,3 +58,10 @@ deploy:
   rules:
     - if: '$CI_COMMIT_TAG'
       when: manual
+
+include:
+  - project: 'services/tech-radar'
+    file: '/ci/radar.yml'
+
+radar-scan:
+  extends: .radar-scan
