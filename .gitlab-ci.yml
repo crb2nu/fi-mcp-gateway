@@ -8,7 +8,7 @@ include:
 stages: [lint, test, build, deploy]
 
 variables:
-  GOPROXY: "https://proxy.golang.org,direct"
+  GOPROXY: 'https://proxy.golang.org,direct'
   GO_VERSION: '1.25'
   GOPRIVATE: 'gitlab.flexinfer.ai/*'
   GOFLAGS: '-buildvcs=false'
@@ -28,7 +28,7 @@ lint:gofmt:
   stage: lint
   script:
     - unformatted="\"
-    - if [ -n "" ]; then echo "Go code is not formatted"; git ls-files -z '*.go' | xargs -0 gofmt -d; exit 1; fi
+    - if [ -n "\" ]; then echo "Go code is not formatted"; git ls-files -z '*.go' | xargs -0 gofmt -d; exit 1; fi
 
 lint:vet:
   extends: [.go-base, .go-image]
@@ -39,7 +39,6 @@ lint:vet:
 test:
   extends: [.go-test, .go-image]
   variables:
-  GOPROXY: "https://proxy.golang.org,direct"
     CGO_ENABLED: '1'
 
 build:
