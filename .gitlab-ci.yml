@@ -8,6 +8,7 @@ include:
 stages: [lint, test, build, deploy]
 
 variables:
+  GOPROXY: "https://proxy.golang.org,direct"
   GO_VERSION: '1.25'
   GOPRIVATE: 'gitlab.flexinfer.ai/*'
   GOFLAGS: '-buildvcs=false'
@@ -38,6 +39,7 @@ lint:vet:
 test:
   extends: [.go-test, .go-image]
   variables:
+  GOPROXY: "https://proxy.golang.org,direct"
     CGO_ENABLED: '1'
 
 build:
