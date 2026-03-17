@@ -17,8 +17,8 @@ Bootstrap in progress:
 
 | Feature | Description | Status |
 |---------|-------------|--------|
-| Smart Routing | Content-based routing beyond tool name | Pending |
-| Hub Transport | Route requests to remote hub servers | Pending |
+| Smart Routing | Content-based routing beyond tool name | Pending ([Issue](https://gitlab.flexinfer.ai/services/fi-mcp-gateway/-/issues/1)) |
+| Hub Transport | Route requests to remote hub servers | Pending ([Issue](https://gitlab.flexinfer.ai/services/fi-mcp-gateway/-/issues/2)) |
 
 ## References
 

@@ -1,0 +1,6 @@
+FROM --platform=linux/amd64 alpine:3.21
+RUN apk add --no-cache ca-certificates && adduser -D -u 1000 mcp
+USER mcp
+COPY bin/fi-mcp-gateway /usr/local/bin/fi-mcp-gateway
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/fi-mcp-gateway"]
