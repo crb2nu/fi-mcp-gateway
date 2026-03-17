@@ -2,17 +2,17 @@
 include:
   - project: 'platform/gitops'
     file: '/ci/templates/go.yml'
+  - project: 'services/tech-radar'
+    file: '/ci/radar.yml'
 
 stages: [lint, test, build, deploy]
 
 variables:
-  GO_VERSION: "1.25"
-  GOPRIVATE: "gitlab.flexinfer.ai/*"
-  GOFLAGS: "-buildvcs=false"
-  # Work around Harbor reachability issues for k8s runner helper image pulls.
-  KUBERNETES_HELPER_IMAGE: "registry.gitlab.com/gitlab-org/gitlab-runner/gitlab-runner-helper:x86_64-v18.6.2"
+  GO_VERSION: '1.25'
+  GOPRIVATE: 'gitlab.flexinfer.ai/*'
+  GOFLAGS: '-buildvcs=false'
+  KUBERNETES_HELPER_IMAGE: 'registry.gitlab.com/gitlab-org/gitlab-runner/gitlab-runner-helper:x86_64-v18.6.2'
 
-# Override image since GitLab CI doesn't expand variables in image field from includes
 .go-image:
   image: golang:1.25
   before_script:
@@ -26,8 +26,8 @@ lint:gofmt:
   extends: [.go-base, .go-image]
   stage: lint
   script:
-    - unformatted="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
-    - if [ -n "$unformatted" ]; then echo "Go code is not formatted"; git ls-files -z '*.go' | xargs -0 gofmt -d; exit 1; fi
+    - unformatted="\"
+    - if [ -n "" ]; then echo "Go code is not formatted"; git ls-files -z '*.go' | xargs -0 gofmt -d; exit 1; fi
 
 lint:vet:
   extends: [.go-base, .go-image]
@@ -38,7 +38,7 @@ lint:vet:
 test:
   extends: [.go-test, .go-image]
   variables:
-    CGO_ENABLED: "1"
+    CGO_ENABLED: '1'
 
 build:
   extends: [.go-build, .go-image]
@@ -58,10 +58,6 @@ deploy:
   rules:
     - if: '$CI_COMMIT_TAG'
       when: manual
-
-include:
-  - project: 'services/tech-radar'
-    file: '/ci/radar.yml'
 
 radar-scan:
   extends: .radar-scan
