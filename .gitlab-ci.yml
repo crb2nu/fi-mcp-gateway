@@ -27,14 +27,21 @@ lint:gofmt:
   extends: [.go-base, .go-image]
   stage: lint
   script:
-    - unformatted=""
-    - if [ -n "" ]; then echo "Go code is not formatted"; git ls-files -z '*.go' | xargs -0 gofmt -d; exit 1; fi
+    - unformatted="$(git ls-files '*.go' | xargs gofmt -l)"
+    - if [ -n "$unformatted" ]; then echo "Go code is not formatted:"; echo "$unformatted"; exit 1; fi
 
 lint:vet:
   extends: [.go-base, .go-image]
   stage: lint
   script:
     - go vet ./...
+
+lint:golangci:
+  extends: [.go-base, .go-image]
+  stage: lint
+  script:
+    - go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
+    - $(go env GOPATH)/bin/golangci-lint run --timeout 5m ./...
 
 test:
   extends: [.go-test, .go-image]

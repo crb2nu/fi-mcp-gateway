@@ -1,0 +1,33 @@
+# golangci-lint configuration (v2) — canonical workspace Go config.
+# Derived from services/loom-core/.golangci.yml, corrected to valid golangci-lint v2
+# schema (loom-core's file declares version "2" but uses ignored v1 keys — tracked
+# as a loom-core follow-up). Effective linters: v2 standard set minus errcheck, plus
+# the leak-prevention pair bodyclose + noctx. govet's high-noise `shadow` analyzer is
+# suppressed two ways for cross-version determinism. Shared across Tier-1/2 Go repos
+# (portfolio-refresh slice 6); keep in sync, do not fork. Per-repo exclusions require
+# an inline comment + a linked GitLab issue.
+version: "2"
+linters:
+  default: standard
+  enable:
+    - bodyclose       # unclosed HTTP response bodies (leak prevention)
+    - noctx           # HTTP/SQL calls without context propagation
+  disable:
+    - errcheck        # loom-core policy: too noisy for the current fleet baseline
+  settings:
+    govet:
+      disable:
+        - shadow      # idiomatic err-shadowing dominates; low signal
+  exclusions:
+    generated: lax
+    rules:
+      # Backstop for versions where govet.disable is not honored for shadow.
+      - linters: [govet]
+        text: "shadows declaration"
+      # Test files legitimately use non-context calls and unclosed bodies.
+      - path: _test\.go
+        linters: [noctx, bodyclose]
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
