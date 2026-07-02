@@ -210,7 +210,6 @@ func (s *PostgresStore) GetSummary(ctx context.Context, tenantID, userID string,
 	if !end.IsZero() {
 		query += ` AND timestamp <= $` + itoa(argIdx)
 		args = append(args, end)
-		argIdx++
 	}
 
 	var totalDurationNs, avgDurationNs int64
@@ -257,7 +256,6 @@ func (s *PostgresStore) GetSummary(ctx context.Context, tenantID, userID string,
 	if !end.IsZero() {
 		breakdownQuery += ` AND timestamp <= $` + itoa(breakdownArgIdx)
 		breakdownArgs = append(breakdownArgs, end)
-		breakdownArgIdx++
 	}
 
 	breakdownQuery += ` GROUP BY tool_name ORDER BY count DESC LIMIT 100`

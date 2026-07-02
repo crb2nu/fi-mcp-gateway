@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -236,16 +235,4 @@ func (p *Postgres) MigrateAPIKeysSchema(ctx context.Context) error {
 
 	_, err := p.db.ExecContext(ctx, schema)
 	return err
-}
-
-func envIntDefault2(key string, fallback int) int {
-	v := strings.TrimSpace(os.Getenv(key))
-	if v == "" {
-		return fallback
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n < 0 {
-		return fallback
-	}
-	return n
 }

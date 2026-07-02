@@ -260,13 +260,6 @@ func (NoopSender) Close() error                                { return nil }
 
 // Helper functions
 
-func envDefault(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
 func envBoolDefault(key string, fallback bool) bool {
 	v := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
 	if v == "" {

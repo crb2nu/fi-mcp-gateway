@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -108,7 +109,7 @@ func (l *WSRateLimiter) CheckRequest(tenant, user, tool string) (Result, error) 
 		Tool:   tool,
 	}
 
-	return l.limiter.Allow(nil, key)
+	return l.limiter.Allow(context.Background(), key)
 }
 
 // CheckConnection checks if a new WebSocket connection should be allowed.
@@ -120,7 +121,7 @@ func (l *WSRateLimiter) CheckConnection(tenant, user string) (Result, error) {
 		User:   user,
 	}
 
-	return l.limiter.Allow(nil, key)
+	return l.limiter.Allow(context.Background(), key)
 }
 
 // FormatRetryAfter formats the retry-after duration for error messages.
