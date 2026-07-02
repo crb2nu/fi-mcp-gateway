@@ -244,9 +244,12 @@ func (g *Gateway) dialBackend(ctx context.Context, serverName string, headers ht
 	}
 
 	start := time.Now()
-	conn, _, err := dialer.DialContext(ctx, dialURL, headers)
+	conn, resp, err := dialer.DialContext(ctx, dialURL, headers) //nolint:bodyclose // gorilla manages the handshake resp.Body on success; it is closed on the error path below
 	metrics.BackendDialDuration.Observe(time.Since(start).Seconds())
 	if err != nil {
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
 		metrics.ErrorsTotal.WithLabelValues("backend_dial").Inc()
 		return nil, err
 	}

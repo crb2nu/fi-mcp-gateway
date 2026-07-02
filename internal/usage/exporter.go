@@ -1,6 +1,7 @@
 package usage
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -29,7 +30,7 @@ func NewExporter(tracker Tracker) *Exporter {
 
 // Export writes usage events to the given writer in the specified format.
 func (e *Exporter) Export(w io.Writer, params QueryParams, format ExportFormat) error {
-	events, err := e.tracker.Query(nil, params)
+	events, err := e.tracker.Query(context.Background(), params)
 	if err != nil {
 		return fmt.Errorf("query events: %w", err)
 	}
@@ -46,7 +47,7 @@ func (e *Exporter) Export(w io.Writer, params QueryParams, format ExportFormat) 
 
 // ExportSummary writes a usage summary to the given writer.
 func (e *Exporter) ExportSummary(w io.Writer, tenantID, userID string, start, end time.Time, format ExportFormat) error {
-	summary, err := e.tracker.GetSummary(nil, tenantID, userID, start, end)
+	summary, err := e.tracker.GetSummary(context.Background(), tenantID, userID, start, end)
 	if err != nil {
 		return fmt.Errorf("get summary: %w", err)
 	}

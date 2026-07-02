@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
@@ -28,7 +29,7 @@ func TestJWKSAuthenticator_ValidToken(t *testing.T) {
 		ClockSkew: 0,
 	}
 
-	a, err := NewJWKSAuthenticator(nil, cfg)
+	a, err := NewJWKSAuthenticator(context.TODO(), cfg)
 	if err != nil {
 		t.Fatalf("NewJWKSAuthenticator: %v", err)
 	}
@@ -68,7 +69,7 @@ func TestJWKSAuthenticator_MissingToken(t *testing.T) {
 		Required: true,
 	}
 
-	a, err := NewJWKSAuthenticator(nil, cfg)
+	a, err := NewJWKSAuthenticator(context.TODO(), cfg)
 	if err != nil {
 		t.Fatalf("NewJWKSAuthenticator: %v", err)
 	}
@@ -93,7 +94,7 @@ func TestJWKSAuthenticator_IssuerMismatch(t *testing.T) {
 		Required:  true,
 	}
 
-	a, err := NewJWKSAuthenticator(nil, cfg)
+	a, err := NewJWKSAuthenticator(context.TODO(), cfg)
 	if err != nil {
 		t.Fatalf("NewJWKSAuthenticator: %v", err)
 	}
@@ -127,7 +128,7 @@ func startJWKS(t *testing.T) (*rsa.PrivateKey, string) {
 		t.Fatalf("GenerateKey: %v", err)
 	}
 
-	n := base64.RawURLEncoding.EncodeToString(priv.PublicKey.N.Bytes())
+	n := base64.RawURLEncoding.EncodeToString(priv.N.Bytes())
 	e := base64.RawURLEncoding.EncodeToString([]byte{0x01, 0x00, 0x01}) // 65537
 
 	doc := map[string]any{
