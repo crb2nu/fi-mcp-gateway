@@ -21,10 +21,12 @@ type Server struct {
 	reg           *registry.Registry
 	ws            *mcpws.Gateway
 	authenticator auth.Authenticator
+	pol           policy.Policy
 	apikeys       apikeys.Manager
 	quotas        quota.Manager
 	usage         usage.Tracker
 	httpLimiter   ratelimit.Limiter
+	toolTimeout   time.Duration
 }
 
 type Config struct {
@@ -36,16 +38,27 @@ type Config struct {
 	APIKeys       apikeys.Manager
 	Quotas        quota.Manager
 	Usage         usage.Tracker
+
+	// ToolCallTimeout bounds a single REST tool invocation. Defaults to
+	// FI_MCP_TOOL_CALL_TIMEOUT or 30s.
+	ToolCallTimeout time.Duration
 }
 
 func New(cfg Config) *Server {
+	toolTimeout := cfg.ToolCallTimeout
+	if toolTimeout <= 0 {
+		toolTimeout = toolCallTimeoutFromEnv()
+	}
+
 	return &Server{
 		reg:           cfg.Registry,
 		authenticator: cfg.Authenticator,
+		pol:           cfg.Policy,
 		apikeys:       cfg.APIKeys,
 		quotas:        cfg.Quotas,
 		usage:         cfg.Usage,
 		httpLimiter:   cfg.HTTPLimiter,
+		toolTimeout:   toolTimeout,
 		ws: mcpws.New(mcpws.Config{
 			Registry:      cfg.Registry,
 			Authenticator: cfg.Authenticator,
@@ -121,6 +134,10 @@ func (s *Server) Handler() http.Handler {
 
 		writeJSON(w, http.StatusOK, map[string]any{"servers": out})
 	})
+
+	// REST tool invocation (keyless like GET /api/servers; gated by the
+	// registry always_allow allowlist instead of API keys).
+	apiMux.HandleFunc("POST /api/v1/tools/{server}/{tool}", s.handleInvokeTool)
 
 	// API Key management endpoints
 	if s.apikeys != nil {

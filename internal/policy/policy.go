@@ -140,14 +140,27 @@ func (p *PatternPolicy) isRegistryAlwaysAllow(profile, toolName string) bool {
 		if srv == nil || srv.IsLocalOnly() {
 			continue
 		}
-		spec, err := p.registry.GetServerSpec(srv.Name, profile)
-		if err != nil || spec == nil {
-			continue
+		if IsToolAlwaysAllowed(p.registry, srv.Name, profile, toolName) {
+			return true
 		}
-		for _, t := range spec.AlwaysAllow {
-			if t == toolName {
-				return true
-			}
+	}
+	return false
+}
+
+// IsToolAlwaysAllowed reports whether the registry marks toolName as
+// always_allow for the given server and profile. It is the server-scoped
+// building block behind the registry always_allow policy check.
+func IsToolAlwaysAllowed(reg *registry.Registry, serverName, profile, toolName string) bool {
+	if reg == nil {
+		return false
+	}
+	spec, err := reg.GetServerSpec(serverName, profile)
+	if err != nil || spec == nil {
+		return false
+	}
+	for _, t := range spec.AlwaysAllow {
+		if t == toolName {
+			return true
 		}
 	}
 	return false
